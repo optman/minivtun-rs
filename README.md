@@ -1,7 +1,8 @@
 # minivtun-rs
 A Rust implementation of minivtun.
 
-###Usage
+### Usage
+```
 minivtun-rs 0.1
 Mini virtual tunneller in non-standard protocol
 
@@ -27,5 +28,5 @@ OPTIONS:
     -v, --route <network/prefix[=gw>...    attached IPv4/IPv6 route on this link, can be multiple
     -T, --table <table_name>               route table of the attached routes
     -t, --type <encryption_type>           encryption type(aes-128, aes-256), default:aes-128
-
+```
 
