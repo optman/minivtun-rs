@@ -1,0 +1,24 @@
+[package]
+name = "minivtun-rs"
+version = "0.1.0"
+authors = ["optman <optman@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tun={version="0.5", git="https://github.com/0e4ef622/rust-tun"}
+packet="*"
+libc="*"
+byteorder="*"
+thiserror="*"
+num_enum="*"
+ipnet="*"
+clap="2.33"
+rand="*"
+log="*"
+env_logger="*"
+daemonize="*"
+aes={git="https://github.com/RustCrypto/block-ciphers"}
+block-modes={git="https://github.com/RustCrypto/block-ciphers"}
+md-5={git="https://github.com/RustCrypto/hashes"}
