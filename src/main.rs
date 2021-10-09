@@ -1,8 +1,10 @@
 #![allow(dead_code)]
 
 use daemonize::Daemonize;
+use nix::sys::socket::{setsockopt, sockopt};
 use std::error::Error;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
+use std::os::unix::io::AsRawFd;
 use std::panic;
 use tun::Device;
 
@@ -59,6 +61,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let listen_addr = config.listen_addr.unwrap_or(default_listen_addr);
     let socket = UdpSocket::bind(listen_addr)?;
+    socket.set_nonblocking(true)?;
+
+    if let Some(fwmark) = config.fwmark {
+        log::debug!("set fwmark {}", fwmark);
+        setsockopt(socket.as_raw_fd(), sockopt::Mark, &fwmark)?;
+    }
 
     let mut tun_config = tun::configure();
     if let Some(ref name) = config.ifname {

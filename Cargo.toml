@@ -22,3 +22,4 @@ daemonize="*"
 aes={git="https://github.com/RustCrypto/block-ciphers"}
 block-modes={git="https://github.com/RustCrypto/block-ciphers"}
 md-5={git="https://github.com/RustCrypto/hashes"}
+nix="*"

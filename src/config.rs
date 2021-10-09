@@ -19,6 +19,7 @@ pub struct Config {
     pub reconnect_timeout: Option<Duration>,
     pub table: Option<String>,
     pub metric: Option<String>,
+    pub fwmark: Option<u32>,
 }
 
 #[cfg(test)]

@@ -50,6 +50,7 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         .arg(Arg::from_usage(&keepalive))
         .arg(Arg::from_usage("-T, --table [table_name]            'route table of the attached routes'"))
         .arg(Arg::from_usage("-M, --metric [metric]               'metric of attached routes'"))
+        .arg(Arg::from_usage("-F, --fwmark [fwmark_num]           'fwmark set on vpn traffic'"))
         .get_matches();
 
     if let Some(local) = matches.value_of("local") {
@@ -144,6 +145,14 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
 
     config.table = matches.value_of("table").map(Into::into);
     config.metric = matches.value_of("metric").map(Into::into);
+
+    if let Some(fwmark) = matches.value_of("fwmark") {
+        config.fwmark = Some(
+            fwmark
+                .parse()
+                .map_err(|_| Error::InvalidArg("invalid fwmark".into()))?,
+        );
+    };
 
     Ok(())
 }
