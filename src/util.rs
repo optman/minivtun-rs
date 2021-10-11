@@ -1,31 +1,36 @@
 use crate::error::{Error, Result};
 use ipnet::IpNet;
-use std::convert::TryInto;
 use std::net::IpAddr;
 use std::process::Command;
 
-fn ipv4_from_slice(s: &[u8]) -> Result<IpAddr> {
-    let addr: [u8; 4] = s[..4].try_into().map_err(|_| Error::InvalidPacket)?;
-    Ok(addr.into())
+#[inline]
+fn ipv4_from_slice(s: &[u8]) -> IpAddr {
+    let mut addr = [0u8; 4];
+    addr.copy_from_slice(&s[0..4]);
+    addr.into()
 }
 
-fn ipv6_from_slice(s: &[u8]) -> Result<IpAddr> {
-    let addr: [u8; 16] = s[..16].try_into().map_err(|_| Error::InvalidPacket)?;
-    Ok(addr.into())
+#[inline]
+fn ipv6_from_slice(s: &[u8]) -> IpAddr {
+    let mut addr = [0u8; 16];
+    addr.copy_from_slice(&s[0..16]);
+    addr.into()
 }
 
+#[inline]
 pub fn source_ip(pkt: &[u8]) -> Result<IpAddr> {
     match pkt[0] >> 4 {
-        4 => ipv4_from_slice(&pkt[12..]),
-        6 => ipv6_from_slice(&pkt[8..]),
+        4 => Ok(ipv4_from_slice(&pkt[12..])),
+        6 => Ok(ipv6_from_slice(&pkt[8..])),
         _ => Err(Error::InvalidPacket),
     }
 }
 
+#[inline]
 pub fn dest_ip(pkt: &[u8]) -> Result<IpAddr> {
     match pkt[0] >> 4 {
-        4 => ipv4_from_slice(&pkt[16..]),
-        6 => ipv6_from_slice(&pkt[24..]),
+        4 => Ok(ipv4_from_slice(&pkt[16..])),
+        6 => Ok(ipv6_from_slice(&pkt[24..])),
         _ => Err(Error::InvalidPacket),
     }
 }

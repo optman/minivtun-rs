@@ -1,10 +1,9 @@
 use crate::error::{Error, Result};
 use crate::msg::builder::{Builder as Build, Finalization};
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 use num_enum::TryFromPrimitive;
 use packet::{buffer::Dynamic, Buffer};
 use std::convert::TryFrom;
-use std::io::Cursor;
 
 #[derive(PartialEq, Debug, TryFromPrimitive)]
 #[repr(u16)]
@@ -57,7 +56,7 @@ impl Default for Builder<Dynamic> {
 impl<B: Buffer> Builder<B> {
     pub fn kind(mut self, kind: Kind) -> Result<Self> {
         self.kind = true;
-        Cursor::new(&mut self.buffer.data_mut()[0..]).write_u16::<BigEndian>(kind as u16)?;
+        BigEndian::write_u16(&mut self.buffer.data_mut()[0..], kind as u16);
         Ok(self)
     }
 
@@ -75,7 +74,8 @@ impl<B: Buffer> Builder<B> {
             self.buffer.more(1)?;
             *self.buffer.data_mut().last_mut().unwrap() = *byte;
         }
-        Cursor::new(&mut self.buffer.data_mut()[2..]).write_u16::<BigEndian>(len)?;
+
+        BigEndian::write_u16(&mut self.buffer.data_mut()[2..], len);
 
         Ok(self)
     }
@@ -87,18 +87,22 @@ pub struct Packet<B> {
 
 impl<B: AsRef<[u8]>> Packet<B> {
     pub fn new(buf: B) -> Result<Self> {
+        if buf.as_ref().len() < HEADER_SIZE {
+            Err(Error::InvalidPacket)?
+        }
+
         Ok(Self { buffer: buf })
     }
 
     pub fn kind(&self) -> Result<Kind> {
-        let kind = Cursor::new(&self.buffer.as_ref()[0..]).read_u16::<BigEndian>()?;
+        let kind = BigEndian::read_u16(&self.buffer.as_ref()[0..]);
         let kind = Kind::try_from(kind).map_err(|_| Error::InvalidPacket)?;
 
         Ok(kind)
     }
 
     pub fn payload_length(&self) -> Result<u16> {
-        Ok(Cursor::new(&self.buffer.as_ref()[2..]).read_u16::<BigEndian>()?)
+        Ok(BigEndian::read_u16(&self.buffer.as_ref()[2..]))
     }
 
     pub fn payload(&self) -> Result<&[u8]> {

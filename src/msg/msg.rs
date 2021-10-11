@@ -1,11 +1,10 @@
 use crate::cryptor::Cryptor;
 use crate::error::{Error, Result};
 use crate::msg::builder::{Builder as Build, Finalization};
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 use num_enum::TryFromPrimitive;
 use packet::{buffer::Dynamic, Buffer};
 use std::convert::TryFrom;
-use std::io::Cursor;
 
 #[derive(PartialEq, Debug, TryFromPrimitive)]
 #[repr(u8)]
@@ -59,7 +58,7 @@ impl Default for Builder<Dynamic> {
 
 impl<B: Buffer> Builder<B> {
     pub fn seq(mut self, seq: u16) -> Result<Self> {
-        Cursor::new(&mut self.buffer.data_mut()[2..]).write_u16::<BigEndian>(seq)?;
+        BigEndian::write_u16(&mut self.buffer.data_mut()[2..], seq);
         Ok(self)
     }
 
@@ -133,10 +132,18 @@ pub struct Packet<B> {
 
 impl<B: AsRef<[u8]>> Packet<B> {
     pub fn new(buf: B) -> Result<Self> {
+        if buf.as_ref().len() < HEADER_SIZE {
+            Err(Error::InvalidPacket)?
+        }
+
         Ok(Self { buffer: buf })
     }
 
     pub fn with_cryptor(buffer: B, mut cryptor: Box<dyn Cryptor>) -> Result<Packet<Vec<u8>>> {
+        if buffer.as_ref().len() < HEADER_SIZE {
+            Err(Error::InvalidPacket)?
+        }
+
         if cryptor.is_plain() {
             return Ok(Packet::new(buffer.as_ref().to_vec())?);
         }
@@ -150,9 +157,7 @@ impl<B: AsRef<[u8]>> Packet<B> {
     }
 
     pub fn seq(&self) -> Result<u16> {
-        let mut buf = Cursor::new(&self.buffer.as_ref()[2..]);
-        let seq = buf.read_u16::<BigEndian>()?;
-        Ok(seq)
+        Ok(BigEndian::read_u16(&self.buffer.as_ref()[2..]))
     }
 
     pub fn op(&self) -> Result<Op> {

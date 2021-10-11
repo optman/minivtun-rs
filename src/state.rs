@@ -1,12 +1,11 @@
 use rand::{thread_rng, Rng};
-use std::num::Wrapping;
 use std::time;
 
 pub struct State {
     pub last_ack: Option<time::Instant>,
     pub last_connect: Option<time::Instant>,
     pub last_echo: Option<time::Instant>,
-    pub xmit_seq: Wrapping<u16>,
+    pub xmit_seq: u16,
 }
 
 impl Default for State {
@@ -15,15 +14,14 @@ impl Default for State {
             last_ack: None,
             last_connect: None,
             last_echo: None,
-            xmit_seq: Wrapping(thread_rng().next_u32() as u16),
+            xmit_seq: thread_rng().next_u32() as u16,
         }
     }
 }
 
 impl State {
     pub fn next_seq(&mut self) -> u16 {
-        self.xmit_seq += Wrapping(1u16);
-        self.xmit_seq.0
+        self.xmit_seq.wrapping_add(1)
     }
 
     pub fn gen_id(&mut self) -> u32 {

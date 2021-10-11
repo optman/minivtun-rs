@@ -1,10 +1,8 @@
-use std::convert::TryInto;
-use std::io::Cursor;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use crate::error::{Error, Result};
 use crate::msg::builder::{Builder as Build, Finalization};
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 use packet::{buffer::Dynamic, Buffer};
 
 const PACKET_SIZE: usize = 24;
@@ -42,7 +40,7 @@ impl Default for Builder<Dynamic> {
 
 impl<B: Buffer> Builder<B> {
     pub fn id(mut self, id: u32) -> Result<Self> {
-        Cursor::new(&mut self.buffer.data_mut()[20..]).write_u32::<BigEndian>(id)?;
+        BigEndian::write_u32(&mut self.buffer.data_mut()[20..], id);
         Ok(self)
     }
 
@@ -63,21 +61,22 @@ pub struct Packet<B> {
 
 impl<B: AsRef<[u8]>> Packet<B> {
     pub fn new(buf: B) -> Result<Self> {
+        if buf.as_ref().len() < PACKET_SIZE {
+            Err(Error::InvalidPacket)?
+        }
         Ok(Self { buffer: buf })
     }
 
     pub fn id(&self) -> Result<u32> {
-        let mut buf = Cursor::new(&self.buffer.as_ref()[20..]);
-        let id = buf.read_u32::<BigEndian>()?;
-        Ok(id)
+        Ok(BigEndian::read_u32(&self.buffer.as_ref()[20..]))
     }
 
     pub fn ip_addr(&self) -> Result<(Ipv4Addr, Ipv6Addr)> {
         let buf = self.buffer.as_ref();
-        let ipv4: [u8; 4] = buf[0..4].try_into().map_err(|_| Error::InvalidPacket)?;
-        let ipv6: [u8; 16] = buf[4..20].try_into().map_err(|_| Error::InvalidPacket)?;
-
-        Ok((ipv4.into(), ipv6.into()))
+        Ok((
+            BigEndian::read_u32(&buf[0..4]).into(),
+            BigEndian::read_u128(&buf[4..20]).into(),
+        ))
     }
 }
 
