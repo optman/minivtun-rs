@@ -34,7 +34,7 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
     );
 
     let matches = App::new("minivtun-rs")
-        .version("0.1")
+        .version(env!("CARGO_PKG_VERSION"))
         .about("Mini virtual tunneller in non-standard protocol")
         .arg(Arg::from_usage("-l, --local [ip:port] 'local IP:port for server to listen'"))
         .arg(Arg::from_usage("-r, --remote [host:port]            'host:port of server to connect (brace with [] for bare IPv6)'"))
@@ -92,11 +92,7 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         matches.value_of("key"),
     ) {
         (Some(t), Some(key)) => {
-            let secret: std::ffi::OsString = key
-                .parse()
-                .map_err(|_| Error::InvalidArg("invalid encryption key".into()))?;
-
-            config.cryptor = cryptor::Builder::new(secret.as_os_str(), t)
+            config.cryptor = cryptor::Builder::new(key, t)
                 .map_err(|_| Error::InvalidArg("invalid encryption type ".into()))?;
         }
         _ => {
@@ -104,14 +100,14 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         }
     }
 
-    if matches.occurrences_of("daemon") > 0 {
+    if matches.is_present("daemon") {
         config.daemonize = Some(true);
     }
 
     if let Some(routes) = matches.values_of("route") {
         let f = || -> Result<(), Box<dyn std::error::Error>> {
             for r in routes {
-                let mut parts = r.split("=");
+                let mut parts = r.splitn(2, "=");
                 let net: IpNet = parts.next().unwrap().parse()?;
                 let gw: Option<IpAddr> = match parts.next() {
                     Some(v) => Some(v.parse()?),

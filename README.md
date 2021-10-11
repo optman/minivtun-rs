@@ -1,5 +1,5 @@
 # minivtun-rs
-A Rust implementation of minivtun.
+A Rust implementation of [minivtun](https://github.com/rssnsj/minivtun).
 
 ### Usage
 ```
@@ -15,6 +15,7 @@ FLAGS:
     -V, --version    Prints version information
 
 OPTIONS:
+    -F, --fwmark <fwmark_num>              fwmark set on vpn traffic
     -n, --ifname <ifname>                  virtual interface name
     -a, --ipv4-addr <tun_lip/prf_len>      pointopoint IPv4 pair of the virtual interface
     -A, --ipv6-addr <tun_ip6/pfx_len>

@@ -1,10 +1,9 @@
 use crate::cryptor::{Aes128Cryptor, Aes256Cryptor, Cryptor, Plain};
 use md5::{Digest, Md5};
-use std::os::unix::prelude::OsStrExt;
 
-pub fn secret_to_key<T: OsStrExt + ?Sized>(secret: &T) -> [u8; 16] {
+pub fn secret_to_key<T: AsRef<str>>(secret: T) -> [u8; 16] {
     let mut d = Md5::default();
-    d.update(secret.as_bytes());
+    d.update(secret.as_ref().as_bytes());
 
     let key = d.finalize();
     *key.as_ref()
@@ -33,8 +32,8 @@ impl Default for Builder {
 }
 
 impl Builder {
-    pub fn new<A: OsStrExt + ?Sized, B: AsRef<str>>(
-        secret: &A,
+    pub fn new<A: AsRef<str>, B: AsRef<str>>(
+        secret: A,
         cipher: B,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let cipher = match cipher.as_ref() {
