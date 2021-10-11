@@ -106,7 +106,12 @@ impl<B: AsRef<[u8]>> Packet<B> {
     }
 
     pub fn payload(&self) -> Result<&[u8]> {
-        Ok(&self.buffer.as_ref()[HEADER_SIZE..HEADER_SIZE + self.payload_length()? as usize])
+        let valid_len = HEADER_SIZE + self.payload_length()? as usize;
+        if self.buffer.as_ref().len() < valid_len {
+            Err(Error::InvalidPacket)?
+        }
+
+        Ok(&self.buffer.as_ref()[HEADER_SIZE..valid_len])
     }
 }
 
