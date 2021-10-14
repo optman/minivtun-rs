@@ -14,24 +14,9 @@ const DEFAULT_RECONNECT_TIMEOUT: i32 = 47;
 const DEFAULT_KEEPALIVE_INTERVAL: i32 = 7;
 
 pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
-    let mtu_usage = format!(
-        "-m, --mtu [mtu]             'set MTU size, default:{}'",
-        DEFAULT_MTU
-    );
-    let type_usage = format!(
-        "-t, --type [encryption_type]        'encryption type(aes-128, aes-256), default:{}'",
-        DEFAULT_CIPHER
-    );
-
-    let reconnect_timeout = format!(
-        "-R, --reconnect-timeo [N]           'maximum inactive time (seconds) before reconnect, default:{}'",
-        DEFAULT_RECONNECT_TIMEOUT
-        );
-
-    let keepalive = format!(
-        "-K, --keepalive [N]                 'seconds between keep-alive tests, default:{}'",
-        DEFAULT_KEEPALIVE_INTERVAL
-    );
+    let default_mtu = DEFAULT_MTU.to_string();
+    let default_reconnect_timeo = DEFAULT_RECONNECT_TIMEOUT.to_string();
+    let default_keepalive_interval = DEFAULT_KEEPALIVE_INTERVAL.to_string();
 
     let matches = App::new("minivtun-rs")
         .version(env!("CARGO_PKG_VERSION"))
@@ -39,15 +24,16 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         .arg(Arg::from_usage("-l, --local [ip:port] 'local IP:port for server to listen'"))
         .arg(Arg::from_usage("-r, --remote [host:port]            'host:port of server to connect (brace with [] for bare IPv6)'"))
         .arg(Arg::from_usage("-n, --ifname [ifname]               'virtual interface name'"))
-        .arg(Arg::from_usage(&mtu_usage))
+        .arg(Arg::from_usage( "-m, --mtu [mtu]             'mtu size'").default_value(&default_mtu))
         .arg(Arg::from_usage("-a, --ipv4-addr [tun_lip/prf_len]   'pointopoint IPv4 pair of the virtual interface'"))
         .arg(Arg::from_usage("-A, --ipv6-addr [tun_ip6/pfx_len]   IPv6 address/prefix length pair"))
         .arg(Arg::from_usage("-d, --daemon                        'run as daemon process'"))
         .arg(Arg::from_usage("-e, --key [encryption_key]          'shared password for data encryption'"))
         .arg(Arg::from_usage("-v, --route... [network/prefix[=gw]]  'attached IPv4/IPv6 route on this link, can be multiple'"))
-        .arg(Arg::from_usage(&type_usage))
-        .arg(Arg::from_usage(&reconnect_timeout))
-        .arg(Arg::from_usage(&keepalive))
+        .arg(Arg::from_usage("-t, --type [encryption_type]        'encryption type'").default_value(DEFAULT_CIPHER).possible_values(&["plain", "aes-128", "aes-256"]))
+        .arg(Arg::from_usage("-R, --reconnect-timeo [N]           'maximum inactive time (seconds) before reconnect'").default_value(&default_reconnect_timeo))
+        .arg(Arg::from_usage("-K, --keepalive [N]                 'seconds between keep-alive tests'")
+            .default_value(&default_keepalive_interval))
         .arg(Arg::from_usage("-T, --table [table_name]            'route table of the attached routes'"))
         .arg(Arg::from_usage("-M, --metric [metric]               'metric of attached routes'"))
         .arg(Arg::from_usage("-F, --fwmark [fwmark_num]           'fwmark set on vpn traffic'"))

@@ -522,7 +522,8 @@ dependencies = [
 [[package]]
 name = "tun"
 version = "0.5.3"
-source = "git+https://github.com/0e4ef622/rust-tun#9434e38bc58e5909107775fb2f6998b05ae73cf6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1cb3f24867499300ae21771a95bbaede2761497ae51094bbefcfd40646815b2a"
 dependencies = [
  "ioctl-sys",
  "libc",

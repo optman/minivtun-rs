@@ -35,12 +35,12 @@ impl Client {
     }
 
     pub fn run(mut self) -> Result {
-        self.socket.connect(
+        let _ = self.socket.connect(
             self.config
                 .server_addr
                 .as_ref()
                 .ok_or("server_addr not set")?,
-        )?;
+        );
         self.state.last_connect = Some(Instant::now());
 
         poll::poll(self.tun.as_raw_fd(), self.socket.as_raw_fd(), self)
