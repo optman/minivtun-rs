@@ -26,7 +26,7 @@ impl Default for Builder {
     fn default() -> Self {
         Self {
             cipher: Cipher::Plain,
-            key: [0u8; 16],
+            key: [0; 16],
         }
     }
 }

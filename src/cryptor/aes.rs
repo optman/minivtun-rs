@@ -70,7 +70,7 @@ impl<C, P, T> AesCryptor<C, P, T> {
     pub fn new(auth_key: &[u8; 16], key_size: usize) -> Self {
         let mut a = Self {
             auth_key: *auth_key,
-            key: [0u8; 32],
+            key: [0; 32],
             key_size: key_size,
             _marker: PhantomData,
             _marker2: PhantomData,

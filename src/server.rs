@@ -120,7 +120,7 @@ impl Server {
 
 impl poll::Reactor for Server {
     fn tunnel_recv(&mut self) -> Result {
-        let mut buf = [0u8; 1600];
+        let mut buf = [0; 1600];
         let size = self.tun.read(&mut buf)?;
         match buf[0] >> 4 {
             4 => {
@@ -142,7 +142,7 @@ impl poll::Reactor for Server {
     }
 
     fn network_recv(&mut self) -> Result {
-        let mut buf = [0u8; 1600];
+        let mut buf = [0; 1600];
         let (size, src) = match self.socket.recv_from(&mut buf) {
             Ok((size, src)) => (size, src),
             Err(e) => {

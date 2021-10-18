@@ -5,14 +5,14 @@ use std::process::Command;
 
 #[inline]
 fn ipv4_from_slice(s: &[u8]) -> IpAddr {
-    let mut addr = [0u8; 4];
+    let mut addr = [0; 4];
     addr.copy_from_slice(&s[0..4]);
     addr.into()
 }
 
 #[inline]
 fn ipv6_from_slice(s: &[u8]) -> IpAddr {
-    let mut addr = [0u8; 16];
+    let mut addr = [0; 16];
     addr.copy_from_slice(&s[0..16]);
     addr.into()
 }

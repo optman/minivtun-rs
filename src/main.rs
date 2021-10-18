@@ -50,16 +50,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         None => None,
     };
 
-    let default_listen_addr4 = SocketAddr::from(([0, 0, 0, 0], 0));
-    let default_listen_addr6 = SocketAddr::from(([0, 0, 0, 0, 0, 0, 0, 0], 0));
-
     let default_listen_addr = match server_addr {
-        Some(SocketAddr::V4(_)) => default_listen_addr4,
-        Some(SocketAddr::V6(_)) => default_listen_addr6,
-        None => default_listen_addr4,
+        Some(SocketAddr::V4(_)) => "0.0.0.0:0",
+        Some(SocketAddr::V6(_)) => "[::]:0",
+        None => "0.0.0.0:0",
     };
 
-    let listen_addr = config.listen_addr.unwrap_or(default_listen_addr);
+    let listen_addr = config
+        .listen_addr
+        .unwrap_or(default_listen_addr.parse().unwrap());
     let socket = UdpSocket::bind(listen_addr)?;
     socket.set_nonblocking(true)?;
 
