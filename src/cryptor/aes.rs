@@ -48,8 +48,8 @@ impl Padding for ZeroPadding {
     }
 }
 
-pub type Aes128Cryptor = AesCryptor<Aes128, ZeroPadding, Cbc<Aes128, ZeroPadding>>;
-pub type Aes256Cryptor = AesCryptor<Aes256, ZeroPadding, Cbc<Aes256, ZeroPadding>>;
+pub type Aes128Cryptor = AesCryptor<Aes128, ZeroPadding, Cbc<Aes128, ZeroPadding>, 16>;
+pub type Aes256Cryptor = AesCryptor<Aes256, ZeroPadding, Cbc<Aes256, ZeroPadding>, 32>;
 
 const IV: [u8; 32] = [
     0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90,
@@ -57,34 +57,33 @@ const IV: [u8; 32] = [
 ];
 
 #[derive(Clone, Copy)]
-pub struct AesCryptor<C, P, T> {
+pub struct AesCryptor<C, P, T, const KEY_SIZE: usize> {
     auth_key: [u8; 16],
-    key: [u8; 32],
-    key_size: usize,
+    key: [u8; KEY_SIZE],
     _marker: PhantomData<C>,
     _marker2: PhantomData<P>,
     _marker3: PhantomData<T>,
 }
 
-impl<C, P, T> AesCryptor<C, P, T> {
-    pub fn new(auth_key: &[u8; 16], key_size: usize) -> Self {
+impl<C, P, T, const KEY_SIZE: usize> AesCryptor<C, P, T, KEY_SIZE> {
+    pub fn new(auth_key: &[u8; 16]) -> Self {
         let mut a = Self {
             auth_key: *auth_key,
-            key: [0; 32],
-            key_size: key_size,
+            key: [0; KEY_SIZE],
             _marker: PhantomData,
             _marker2: PhantomData,
             _marker3: PhantomData,
         };
 
-        a.key[0..16].copy_from_slice(auth_key);
-        a.key[16..32].copy_from_slice(auth_key);
+        for i in 0..KEY_SIZE / 16 {
+            a.key[i * 16..(i + 1) * 16].copy_from_slice(auth_key);
+        }
 
         a
     }
 }
 
-impl<C, P, T> Cryptor for AesCryptor<C, P, T>
+impl<C, P, T, const KEY_SIZE: usize> Cryptor for AesCryptor<C, P, T, KEY_SIZE>
 where
     C: BlockCipher + NewBlockCipher,
     P: Padding,
@@ -99,15 +98,15 @@ where
     }
 
     fn encrypt(&mut self, buffer: &[u8]) -> Result<Vec<u8>, Error> {
-        let cipher = T::new_from_slices(&self.key[..self.key_size], &IV[..16])
-            .map_err(|_| Error::EncryptFail)?;
+        let cipher =
+            T::new_from_slices(&self.key[..KEY_SIZE], &IV[..16]).map_err(|_| Error::EncryptFail)?;
 
         Ok(cipher.encrypt_vec(buffer))
     }
 
     fn decrypt(&mut self, buffer: &[u8]) -> Result<Vec<u8>, Error> {
-        let cipher = T::new_from_slices(&self.key[..self.key_size], &IV[..16])
-            .map_err(|_| Error::EncryptFail)?;
+        let cipher =
+            T::new_from_slices(&self.key[..KEY_SIZE], &IV[..16]).map_err(|_| Error::EncryptFail)?;
 
         Ok(cipher.decrypt_vec(buffer).map_err(|_| Error::DecryptFail)?)
     }

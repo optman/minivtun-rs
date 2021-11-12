@@ -51,8 +51,8 @@ impl Builder {
     pub fn build(&self) -> Box<dyn Cryptor> {
         match self.cipher {
             Cipher::Plain => Box::new(Plain::new()),
-            Cipher::Aes128 => Box::new(Aes128Cryptor::new(&self.key, 16)),
-            Cipher::Aes256 => Box::new(Aes256Cryptor::new(&self.key, 32)),
+            Cipher::Aes128 => Box::new(Aes128Cryptor::new(&self.key)),
+            Cipher::Aes256 => Box::new(Aes256Cryptor::new(&self.key)),
         }
     }
 }
