@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::msg;
 use crate::poll;
+use crate::socket::{AsUdpSocket, Socket};
 use crate::{
     msg::{builder::Builder, ipdata},
     state::State,
@@ -8,7 +9,6 @@ use crate::{
 use log;
 use std::error::Error;
 use std::io::{Read, Write};
-use std::net::UdpSocket;
 use std::os::unix::io::AsRawFd;
 use std::time::Instant;
 use tun::platform::Device;
@@ -19,13 +19,13 @@ type Result = std::result::Result<(), Box<dyn Error>>;
 
 pub struct Client {
     config: Config,
-    socket: UdpSocket,
+    socket: Box<dyn AsUdpSocket>,
     state: State,
     tun: Device,
 }
 
 impl Client {
-    pub fn new(config: Config, socket: UdpSocket, tun: Device) -> Self {
+    pub fn new(config: Config, socket: Box<dyn AsUdpSocket>, tun: Device) -> Self {
         Self {
             config: config,
             socket: socket,
@@ -35,12 +35,13 @@ impl Client {
     }
 
     pub fn run(mut self) -> Result {
-        let _ = self.socket.connect(
+        self.socket.connect(
             self.config
                 .server_addr
                 .as_ref()
                 .ok_or("server_addr not set")?,
-        );
+        )?;
+
         self.state.last_connect = Some(Instant::now());
 
         poll::poll(self.tun.as_raw_fd(), self.socket.as_raw_fd(), self)

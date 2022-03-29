@@ -20,6 +20,9 @@ pub struct Config {
     pub table: Option<String>,
     pub metric: Option<String>,
     pub fwmark: Option<u32>,
+    pub rndz_server: Option<String>,
+    pub rndz_id: Option<String>,
+    pub rndz_remote_id: Option<String>,
 }
 
 #[cfg(test)]

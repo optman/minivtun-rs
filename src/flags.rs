@@ -23,6 +23,9 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         .about("Mini virtual tunneller in non-standard protocol")
         .arg(Arg::from_usage("-l, --local [ip:port] 'local IP:port for server to listen'"))
         .arg(Arg::from_usage("-r, --remote [host:port]            'host:port of server to connect (brace with [] for bare IPv6)'"))
+        .arg(Arg::from_usage("--rndz-server [rndz_server]         'rndz server address"))
+        .arg(Arg::from_usage("--rndz-id [rndz_id]                 'my rndz id"))
+        .arg(Arg::from_usage("--rndz-remote-id [rndz_remote_id]   'remote rndz id"))
         .arg(Arg::from_usage("-n, --ifname [ifname]               'virtual interface name'"))
         .arg(Arg::from_usage( "-m, --mtu [mtu]             'mtu size'").default_value(&default_mtu))
         .arg(Arg::from_usage("-a, --ipv4-addr [tun_lip/prf_len]   'pointopoint IPv4 pair of the virtual interface'"))
@@ -48,6 +51,20 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
     }
 
     config.server_addr = matches.value_of("remote").map(Into::into);
+
+    config.rndz_server = matches.value_of("rndz-server").map(Into::into);
+    config.rndz_id = matches.value_of("rndz-id").map(Into::into);
+    config.rndz_remote_id = matches.value_of("rndz-remote-id").map(Into::into);
+
+    if config.rndz_server.is_some() && config.rndz_id.is_none() {
+        Err(Error::InvalidArg("rndz_id not set".into()))?;
+    }
+
+    if config.server_addr.is_some() && config.rndz_remote_id.is_some() {
+        Err(Error::InvalidArg(
+            "can't set both server_addr and rndz_remote_id".into(),
+        ))?;
+    }
 
     config.ifname = matches.value_of("ifname").or(Some("mv%d")).map(Into::into);
     config.mtu = match matches.value_of("mtu") {

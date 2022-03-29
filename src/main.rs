@@ -3,8 +3,7 @@
 use daemonize::Daemonize;
 use nix::sys::socket::{setsockopt, sockopt};
 use std::error::Error;
-use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
-use std::os::unix::io::AsRawFd;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::panic;
 use tun::Device;
 
@@ -17,11 +16,13 @@ mod msg;
 mod poll;
 mod route;
 mod server;
+mod socket;
 mod state;
 mod util;
 use client::Client;
 use config::Config;
 use server::Server;
+use socket::{AsUdpSocket, PlainSocket, RndzSocket, Socket};
 
 extern crate tun;
 
@@ -39,27 +40,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut config = Config::default();
     flags::parse(&mut config)?;
 
-    let server_addr: Option<SocketAddr> = match config.server_addr {
-        Some(ref server_addr) => {
-            let mut addrs = server_addr.to_socket_addrs().map_err(|_| {
-                crate::error::Error::InvalidArg(format!("invalid remote addr {:?}", server_addr))
-            })?;
-
-            addrs.next()
+    let mut socket: Box<dyn AsUdpSocket> = match config.rndz_server {
+        None => Box::new(PlainSocket::new(choose_bind_addr(&config)?)?),
+        Some(ref rndz_server) => {
+            config.server_addr = config.rndz_remote_id.as_ref().map(|s| s.clone());
+            Box::new(RndzSocket::new(
+                &rndz_server,
+                &config.rndz_id.as_ref().unwrap(),
+                config.listen_addr,
+            )?)
         }
-        None => None,
     };
 
-    let default_listen_addr = match server_addr {
-        Some(SocketAddr::V4(_)) => "0.0.0.0:0",
-        Some(SocketAddr::V6(_)) => "[::]:0",
-        None => "0.0.0.0:0",
-    };
-
-    let listen_addr = config
-        .listen_addr
-        .unwrap_or(default_listen_addr.parse().unwrap());
-    let socket = UdpSocket::bind(listen_addr)?;
     socket.set_nonblocking(true)?;
 
     if let Some(fwmark) = config.fwmark {
@@ -113,7 +105,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         _ => {
             log::info!(
                 "Mini virtual tunneling client to {:}, interface: {:}.",
-                server_addr.unwrap(),
+                config.server_addr.as_ref().unwrap(),
                 tun.name()
             );
 
@@ -125,6 +117,29 @@ fn main() -> Result<(), Box<dyn Error>> {
             client.run()
         }
     }
+}
+
+fn choose_bind_addr(config: &Config) -> Result<SocketAddr, error::Error> {
+    let server_addr: Option<SocketAddr> = match config.server_addr {
+        Some(ref server_addr) => {
+            let mut addrs = server_addr.to_socket_addrs().map_err(|_| {
+                crate::error::Error::InvalidArg(format!("invalid remote addr {:?}", server_addr))
+            })?;
+
+            addrs.next()
+        }
+        None => None,
+    };
+
+    let default_listen_addr = match server_addr {
+        Some(SocketAddr::V4(_)) => "0.0.0.0:0",
+        Some(SocketAddr::V6(_)) => "[::]:0",
+        None => "0.0.0.0:0",
+    };
+
+    Ok(config
+        .listen_addr
+        .unwrap_or(default_listen_addr.parse().unwrap()))
 }
 
 fn do_daemonize() {

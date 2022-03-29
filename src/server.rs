@@ -1,10 +1,11 @@
+use crate::socket::{AsUdpSocket, Socket};
 use crate::util::{dest_ip, source_ip};
 use crate::{
     config::Config, msg, msg::builder::Builder, msg::ipdata, poll, route::RouteTable, state::State,
 };
 use std::error::Error;
 use std::io::{Read, Write};
-use std::net::{SocketAddr, UdpSocket};
+use std::net::SocketAddr;
 use std::os::unix::io::AsRawFd;
 use tun::platform::Device;
 
@@ -12,14 +13,14 @@ type Result = std::result::Result<(), Box<dyn Error>>;
 
 pub struct Server {
     config: Config,
-    socket: UdpSocket,
+    socket: Box<dyn AsUdpSocket>,
     state: State,
     tun: Device,
     rt: RouteTable,
 }
 
 impl Server {
-    pub fn new(config: Config, socket: UdpSocket, tun: Device) -> Self {
+    pub fn new(config: Config, socket: Box<dyn AsUdpSocket>, tun: Device) -> Self {
         Self {
             config: config,
             socket: socket,
@@ -36,6 +37,8 @@ impl Server {
                 None => Err("route gw must be set in server mode!")?,
             }
         }
+
+        self.socket.listen()?;
 
         poll::poll(self.tun.as_raw_fd(), self.socket.as_raw_fd(), self)
     }
