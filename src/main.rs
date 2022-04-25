@@ -54,6 +54,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     socket.set_nonblocking(true)?;
 
+    #[cfg(target_os = "linux")]
     if let Some(fwmark) = config.fwmark {
         log::debug!("set fwmark {}", fwmark);
         setsockopt(socket.as_raw_fd(), sockopt::Mark, &fwmark)?;
