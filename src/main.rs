@@ -62,6 +62,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let socket = UdpSocket::bind(listen_addr)?;
     socket.set_nonblocking(true)?;
 
+    #[cfg(target_os = "linux")]
     if let Some(fwmark) = config.fwmark {
         log::debug!("set fwmark {}", fwmark);
         setsockopt(socket.as_raw_fd(), sockopt::Mark, &fwmark)?;
