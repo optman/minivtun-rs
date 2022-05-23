@@ -6,6 +6,7 @@ use std::error::Error;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::os::unix::io::AsRawFd;
 use std::panic;
+use std::thread;
 use tun::Device;
 
 mod client;
@@ -39,35 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut config = Config::default();
     flags::parse(&mut config)?;
 
-    let server_addr: Option<SocketAddr> = match config.server_addr {
-        Some(ref server_addr) => {
-            let mut addrs = server_addr.to_socket_addrs().map_err(|_| {
-                crate::error::Error::InvalidArg(format!("invalid remote addr {:?}", server_addr))
-            })?;
-
-            addrs.next()
-        }
-        None => None,
-    };
-
-    let default_listen_addr = match server_addr {
-        Some(SocketAddr::V4(_)) => "0.0.0.0:0",
-        Some(SocketAddr::V6(_)) => "[::]:0",
-        None => "0.0.0.0:0",
-    };
-
-    let listen_addr = config
-        .listen_addr
-        .unwrap_or(default_listen_addr.parse().unwrap());
-    let socket = UdpSocket::bind(listen_addr)?;
-    socket.set_nonblocking(true)?;
-
-    #[cfg(target_os = "linux")]
-    if let Some(fwmark) = config.fwmark {
-        log::debug!("set fwmark {}", fwmark);
-        setsockopt(socket.as_raw_fd(), sockopt::Mark, &fwmark)?;
-    }
-
+    //create tun
     let mut tun_config = tun::configure();
     if let Some(ref name) = config.ifname {
         tun_config.name(name);
@@ -96,6 +69,47 @@ fn main() -> Result<(), Box<dyn Error>> {
         util::add_route(net, tun.name(), &config.table, &config.metric)?;
     }
 
+    //create socket
+    let server_addr: Option<SocketAddr> = match config.server_addr {
+        Some(ref server_addr) => loop {
+            let addrs = server_addr.to_socket_addrs().map_err(|_| {
+                crate::error::Error::InvalidArg(format!("invalid remote addr {:?}", server_addr))
+            });
+
+            match addrs {
+                Ok(mut addrs) => break addrs.next(),
+                Err(err) => {
+                    if config.wait_dns {
+                        thread::sleep(config.reconnect_timeout.unwrap());
+                        continue;
+                    } else {
+                        return Err(Box::new(err));
+                    }
+                }
+            }
+        },
+        None => None,
+    };
+
+    let default_listen_addr = match server_addr {
+        Some(SocketAddr::V4(_)) => "0.0.0.0:0",
+        Some(SocketAddr::V6(_)) => "[::]:0",
+        None => "0.0.0.0:0",
+    };
+
+    let listen_addr = config
+        .listen_addr
+        .unwrap_or(default_listen_addr.parse().unwrap());
+    let socket = UdpSocket::bind(listen_addr)?;
+    socket.set_nonblocking(true)?;
+
+    #[cfg(target_os = "linux")]
+    if let Some(fwmark) = config.fwmark {
+        log::debug!("set fwmark {}", fwmark);
+        setsockopt(socket.as_raw_fd(), sockopt::Mark, &fwmark)?;
+    }
+
+    //run
     match config.server_addr {
         None => {
             log::info!(

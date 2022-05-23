@@ -20,6 +20,7 @@ pub struct Config {
     pub table: Option<String>,
     pub metric: Option<String>,
     pub fwmark: Option<u32>,
+    pub wait_dns: bool,
 }
 
 #[cfg(test)]

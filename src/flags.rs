@@ -37,6 +37,7 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         .arg(Arg::from_usage("-T, --table [table_name]            'route table of the attached routes'"))
         .arg(Arg::from_usage("-M, --metric [metric]               'metric of attached routes'"))
         .arg(Arg::from_usage("-F, --fwmark [fwmark_num]           'fwmark set on vpn traffic'"))
+        .arg(Arg::from_usage("-w, --wait-dns                      'wait for DNS resolve ready after service started'"))
         .get_matches();
 
     if let Some(local) = matches.value_of("local") {
@@ -135,6 +136,10 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
                 .map_err(|_| Error::InvalidArg("invalid fwmark".into()))?,
         );
     };
+
+    if matches.is_present("wait-dns") {
+        config.wait_dns = true;
+    }
 
     Ok(())
 }
