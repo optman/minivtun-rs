@@ -89,22 +89,18 @@ where
     P: Padding,
     T: BlockMode<C, P>,
 {
-    fn is_plain(&self) -> bool {
-        false
-    }
-
     fn auth_key(&self) -> &[u8; 16] {
         &self.auth_key
     }
 
-    fn encrypt(&mut self, buffer: &[u8]) -> Result<Vec<u8>, Error> {
+    fn encrypt(&self, buffer: &[u8]) -> Result<Vec<u8>, Error> {
         let cipher =
             T::new_from_slices(&self.key[..KEY_SIZE], &IV[..16]).map_err(|_| Error::EncryptFail)?;
 
         Ok(cipher.encrypt_vec(buffer))
     }
 
-    fn decrypt(&mut self, buffer: &[u8]) -> Result<Vec<u8>, Error> {
+    fn decrypt(&self, buffer: &[u8]) -> Result<Vec<u8>, Error> {
         let cipher =
             T::new_from_slices(&self.key[..KEY_SIZE], &IV[..16]).map_err(|_| Error::EncryptFail)?;
 
@@ -124,7 +120,7 @@ mod tests {
         let key: [u8; 16] = key.try_into().unwrap();
         let data: Vec<u8> = repeat(2).take(64).collect();
 
-        let mut c = Aes128Cryptor::new(&key, 16);
+        let c = Aes128Cryptor::new(&key);
 
         let cipher_txt = c.encrypt(&data).unwrap();
 

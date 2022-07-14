@@ -5,6 +5,7 @@ use byteorder::{BigEndian, ByteOrder};
 use num_enum::TryFromPrimitive;
 use packet::{buffer::Dynamic, Buffer};
 use std::convert::TryFrom;
+use std::rc::Rc;
 
 #[derive(PartialEq, Debug, TryFromPrimitive)]
 #[repr(u8)]
@@ -112,16 +113,17 @@ impl<B: Buffer> Builder<B> {
         Ok(builder)
     }
 
-    pub fn cryptor(mut self, mut cryptor: Box<dyn Cryptor>) -> Result<Self> {
-        if cryptor.is_plain() {
-            return Ok(self);
+    pub fn cryptor(mut self, cryptor: &Option<Rc<Box<dyn Cryptor>>>) -> Result<Self> {
+        match cryptor {
+            Some(cryptor) => {
+                let cryptor = cryptor.clone();
+                self.finalizer.add(move |mut buffer| {
+                    buffer[4..20].copy_from_slice(cryptor.auth_key());
+                    Ok(cryptor.encrypt(&buffer)?)
+                })
+            }
+            None => {}
         }
-
-        self.finalizer.add(move |mut buffer| {
-            buffer[4..20].copy_from_slice(cryptor.auth_key());
-            Ok(cryptor.encrypt(&buffer)?)
-        });
-
         Ok(self)
     }
 }
@@ -139,20 +141,25 @@ impl<B: AsRef<[u8]>> Packet<B> {
         Ok(Self { buffer: buf })
     }
 
-    pub fn with_cryptor(buffer: B, mut cryptor: Box<dyn Cryptor>) -> Result<Packet<Vec<u8>>> {
+    pub fn with_cryptor(
+        buffer: B,
+        cryptor: &Option<Rc<Box<dyn Cryptor>>>,
+    ) -> Result<Packet<Vec<u8>>> {
         if buffer.as_ref().len() < HEADER_SIZE {
             Err(Error::InvalidPacket)?
         }
 
-        if cryptor.is_plain() {
-            return Ok(Packet::new(buffer.as_ref().to_vec())?);
-        }
+        let out = match cryptor {
+            None => buffer.as_ref().to_vec(),
+            Some(cryptor) => {
+                let out = cryptor.decrypt(buffer.as_ref())?;
+                if out[4..20] != *cryptor.auth_key() {
+                    Err(Error::InvalidPacket)?
+                };
 
-        let out = cryptor.decrypt(buffer.as_ref())?;
-        if out[4..20] != *cryptor.auth_key() {
-            Err(Error::InvalidPacket)?
-        }
-
+                out
+            }
+        };
         Packet::new(out)
     }
 
@@ -184,7 +191,8 @@ mod tests {
         let key: Vec<u8> = repeat(1).take(16).collect();
         let key: [u8; 16] = key.try_into().unwrap();
 
-        let cryptor = Aes128Cryptor::new(&key, 16);
+        let cryptor: Option<Rc<Box<dyn Cryptor>>> =
+            Some(Rc::new(Box::new(Aes128Cryptor::new(&key))));
 
         let buf = Builder::default()
             .seq(1)
@@ -193,18 +201,18 @@ mod tests {
             .unwrap()
             .payload(&[0; 12])
             .unwrap()
-            .cryptor(Box::new(cryptor.clone()))
+            .cryptor(&cryptor)
             .unwrap()
             .build()
             .unwrap();
 
         assert_eq!(buf.len(), 20 + 12); //align to block size
 
-        let p = Packet::with_cryptor(buf, Box::new(cryptor.clone())).unwrap();
+        let p = Packet::with_cryptor(buf, &cryptor).unwrap();
         assert_eq!(p.seq().unwrap(), 1);
 
         let buf = Builder::default()
-            .cryptor(Box::new(cryptor.clone()))
+            .cryptor(&cryptor)
             .unwrap()
             .seq(1)
             .unwrap()
@@ -217,7 +225,7 @@ mod tests {
 
         assert_eq!(buf.len(), 20 + 24 + 4 /*padding*/);
 
-        let p = Packet::with_cryptor(buf, Box::new(cryptor.clone())).unwrap();
+        let p = Packet::with_cryptor(buf, &cryptor).unwrap();
 
         assert_eq!(p.op().unwrap(), Op::EchoReq);
 

@@ -58,7 +58,7 @@ impl Server {
         };
 
         let buf = msg::Builder::default()
-            .cryptor(self.config.cryptor.build())?
+            .cryptor(&self.config.cryptor)?
             .seq(va.ra.next_seq())?
             .ip_data()?
             .kind(kind)?
@@ -107,7 +107,7 @@ impl Server {
         }
 
         let mut builder = msg::Builder::default()
-            .cryptor(self.config.cryptor.build())?
+            .cryptor(&self.config.cryptor)?
             .seq(ra.next_seq())?
             .echo_ack()?
             .id(pkt.id()?)?;
@@ -161,7 +161,7 @@ impl poll::Reactor for Server {
             }
         };
         trace!("receive from  {:}, size {:}", src, size);
-        match msg::Packet::with_cryptor(&buf[..size], self.config.cryptor.build()) {
+        match msg::Packet::with_cryptor(&buf[..size], &self.config.cryptor) {
             Ok(msg) => match msg.op() {
                 Ok(Op::IpData) => {
                     self.forward_local(&src, Packet::new(msg.payload()?)?.payload()?)?;

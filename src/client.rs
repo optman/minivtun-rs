@@ -52,7 +52,7 @@ impl Client {
 
     fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result {
         let buf = msg::Builder::default()
-            .cryptor(self.config.cryptor.build())?
+            .cryptor(&self.config.cryptor)?
             .seq(self.state.next_seq())?
             .ip_data()?
             .kind(kind)?
@@ -78,7 +78,7 @@ impl Client {
 
     fn send_echo(&mut self) -> Result {
         let mut builder = msg::Builder::default()
-            .cryptor(self.config.cryptor.build())?
+            .cryptor(&self.config.cryptor)?
             .seq(self.state.next_seq())?
             .echo_req()?
             .id(self.state.gen_id())?;
@@ -126,7 +126,7 @@ impl poll::Reactor for Client {
             }
         };
         trace!("receive from  {:}, size {:}", src, size);
-        match msg::Packet::with_cryptor(&buf[..size], self.config.cryptor.build()) {
+        match msg::Packet::with_cryptor(&buf[..size], &self.config.cryptor) {
             Ok(msg) => match msg.op() {
                 Ok(Op::EchoAck) => {
                     debug!("received echo ack");

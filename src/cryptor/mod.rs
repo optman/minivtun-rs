@@ -4,5 +4,3 @@ pub mod builder;
 pub use builder::Builder;
 pub mod cryptor;
 pub use cryptor::Cryptor;
-pub mod plain;
-pub use plain::Plain;

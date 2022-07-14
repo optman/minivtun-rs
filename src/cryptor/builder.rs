@@ -1,4 +1,4 @@
-use crate::cryptor::{Aes128Cryptor, Aes256Cryptor, Cryptor, Plain};
+use crate::cryptor::{Aes128Cryptor, Aes256Cryptor, Cryptor};
 use md5::{Digest, Md5};
 
 pub fn secret_to_key<T: AsRef<str>>(secret: T) -> [u8; 16] {
@@ -48,11 +48,11 @@ impl Builder {
             key: secret_to_key(secret),
         })
     }
-    pub fn build(&self) -> Box<dyn Cryptor> {
+    pub fn build(&self) -> Option<Box<dyn Cryptor>> {
         match self.cipher {
-            Cipher::Plain => Box::new(Plain::new()),
-            Cipher::Aes128 => Box::new(Aes128Cryptor::new(&self.key)),
-            Cipher::Aes256 => Box::new(Aes256Cryptor::new(&self.key)),
+            Cipher::Plain => None,
+            Cipher::Aes128 => Some(Box::new(Aes128Cryptor::new(&self.key))),
+            Cipher::Aes256 => Some(Box::new(Aes256Cryptor::new(&self.key))),
         }
     }
 }
