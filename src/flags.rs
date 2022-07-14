@@ -3,7 +3,7 @@ use crate::cryptor;
 use crate::error::Error;
 use clap::{App, Arg};
 use ipnet::IpNet;
-use log;
+use log::warn;
 use std::net::IpAddr;
 use std::result::Result;
 use std::time::Duration;
@@ -83,7 +83,7 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
                 .map_err(|_| Error::InvalidArg("invalid encryption type ".into()))?;
         }
         _ => {
-            log::warn!("*** WARNING: Transmission will not be encrypted.");
+            warn!("*** WARNING: Transmission will not be encrypted.");
         }
     }
 

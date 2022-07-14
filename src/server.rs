@@ -1,7 +1,17 @@
 use crate::util::{dest_ip, source_ip};
 use crate::{
-    config::Config, msg, msg::builder::Builder, msg::ipdata, poll, route::RouteTable, state::State,
+    config::Config,
+    msg,
+    msg::{
+        builder::Builder,
+        ipdata::{Kind, Packet},
+        Op,
+    },
+    poll,
+    route::RouteTable,
+    state::State,
 };
+use log::{debug, trace, warn};
 use std::error::Error;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, UdpSocket};
@@ -40,7 +50,7 @@ impl Server {
         poll::poll(self.tun.as_raw_fd(), self.socket.as_raw_fd(), self)
     }
 
-    fn forward_remote(&mut self, kind: ipdata::Kind, pkt: &[u8]) -> Result {
+    fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result {
         let dst = dest_ip(pkt)?;
         let va = match self.rt.get_route(&dst) {
             Some(va) => va,
@@ -64,7 +74,7 @@ impl Server {
         match self.rt.get_and_update_route(&src, ra) {
             Some(_) => {}
             None => {
-                log::debug!("unknown src {:}", src);
+                debug!("unknown src {:}", src);
                 return Ok(());
             }
         }
@@ -74,7 +84,7 @@ impl Server {
                 self.tun.write(pkt)?;
             }
             _ => {
-                log::debug!("[FWD]invalid packet!")
+                debug!("[FWD]invalid packet!")
             }
         }
 
@@ -125,16 +135,16 @@ impl poll::Reactor for Server {
         match buf[0] >> 4 {
             4 => {
                 let _ = self
-                    .forward_remote(ipdata::Kind::V4, &buf[..size])
-                    .map_err(|e| log::debug!("forward remote fail. {:?}", e));
+                    .forward_remote(Kind::V4, &buf[..size])
+                    .map_err(|e| debug!("forward remote fail. {:?}", e));
             }
             6 => {
                 let _ = self
-                    .forward_remote(ipdata::Kind::V6, &buf[..size])
-                    .map_err(|e| log::debug!("forward remote fail. {:?}", e));
+                    .forward_remote(Kind::V6, &buf[..size])
+                    .map_err(|e| debug!("forward remote fail. {:?}", e));
             }
             _ => {
-                log::warn!("[INPUT]invalid packet");
+                warn!("[INPUT]invalid packet");
             }
         }
 
@@ -146,27 +156,27 @@ impl poll::Reactor for Server {
         let (size, src) = match self.socket.recv_from(&mut buf) {
             Ok((size, src)) => (size, src),
             Err(e) => {
-                log::debug!("receive from client fail. {:?}", e);
+                debug!("receive from client fail. {:?}", e);
                 return Ok(());
             }
         };
-        log::trace!("receive from  {:}, size {:}", src, size);
+        trace!("receive from  {:}, size {:}", src, size);
         match msg::Packet::with_cryptor(&buf[..size], self.config.cryptor.build()) {
             Ok(msg) => match msg.op() {
-                Ok(msg::Op::IpData) => {
-                    self.forward_local(&src, ipdata::Packet::new(msg.payload()?)?.payload()?)?;
+                Ok(Op::IpData) => {
+                    self.forward_local(&src, Packet::new(msg.payload()?)?.payload()?)?;
                 }
-                Ok(msg::Op::EchoReq) => {
+                Ok(Op::EchoReq) => {
                     let echo = msg::echo::Packet::new(msg.payload()?)?;
-                    log::debug!("received echo req {:?}", echo.ip_addr()?);
+                    debug!("received echo req {:?}", echo.ip_addr()?);
                     self.handle_echo_req(src, echo)?;
                 }
                 _ => {
-                    log::debug!("unexpected msg {:?}", msg.op());
+                    debug!("unexpected msg {:?}", msg.op());
                 }
             },
             _ => {
-                log::trace!("invalid packet")
+                trace!("invalid packet")
             }
         }
 

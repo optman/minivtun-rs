@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use daemonize::Daemonize;
+use log::{debug, info};
 use nix::sys::socket::{setsockopt, sockopt};
 use std::error::Error;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
@@ -55,17 +56,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     tun.set_nonblock()?;
 
     if let Some(addr4) = config.loc_tun_in {
-        log::debug!("add address {}", addr4);
+        debug!("add address {}", addr4);
         util::add_addr(addr4.into(), tun.name())?;
     };
 
     if let Some(addr6) = config.loc_tun_in6 {
-        log::debug!("add address {}", addr6);
+        debug!("add address {}", addr6);
         util::add_addr(addr6.into(), tun.name())?;
     };
 
     for (net, _) in &config.routes {
-        log::debug!("add route {}", net);
+        debug!("add route {}", net);
         util::add_route(net, tun.name(), &config.table, &config.metric)?;
     }
 
@@ -105,43 +106,39 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     #[cfg(target_os = "linux")]
     if let Some(fwmark) = config.fwmark {
-        log::debug!("set fwmark {}", fwmark);
+        debug!("set fwmark {}", fwmark);
         setsockopt(socket.as_raw_fd(), sockopt::Mark, &fwmark)?;
     }
 
     //run
     match config.server_addr {
         None => {
-            log::info!(
+            info!(
                 "Mini virtual tunneling server on {:}, interface: {:}.",
                 socket.local_addr().unwrap(),
                 tun.name()
             );
 
-            if let Some(true) = config.daemonize {
-                do_daemonize();
-            }
+            do_daemonize(&config);
 
-            let svr = Server::new(config, socket, tun);
-            svr.run()
+            Server::new(config, socket, tun).run()
         }
         _ => {
-            log::info!(
+            info!(
                 "Mini virtual tunneling client to {:}, interface: {:}.",
                 server_addr.unwrap(),
                 tun.name()
             );
 
-            if let Some(true) = config.daemonize {
-                do_daemonize();
-            }
+            do_daemonize(&config);
 
-            let client = Client::new(config, socket, tun);
-            client.run()
+            Client::new(config, socket, tun).run()
         }
     }
 }
 
-fn do_daemonize() {
-    Daemonize::new().user("nobody").start().unwrap();
+fn do_daemonize(config: &Config) {
+    if let Some(true) = config.daemonize {
+        Daemonize::new().user("nobody").start().unwrap();
+    }
 }

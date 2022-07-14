@@ -1,5 +1,5 @@
 use ipnet::IpNet;
-use log;
+use log::{debug, info};
 use rand::{thread_rng, Rng};
 use std::cell::RefCell;
 use std::net::{IpAddr, SocketAddr};
@@ -100,7 +100,7 @@ impl RouteTable {
             .entry(*addr)
             .and_modify(|v| v.recv())
             .or_insert_with(|| {
-                log::info!("New client [{:?}]", addr);
+                info!("New client [{:?}]", addr);
                 RefRA::new(addr)
             })
             .clone()
@@ -116,11 +116,11 @@ impl RouteTable {
             .entry(*va)
             .and_modify(|v| v.last_recv = Instant::now())
             .or_insert_with(|| {
-                log::info!("New vip [{:?}] at [{:?}]", va, ra.addr());
+                info!("New vip [{:?}] at [{:?}]", va, ra.addr());
                 VirtualAddr::new(*va, ra.clone())
             });
         if va.ra.addr() != ra.addr() {
-            log::info!("Change vip [{:?}] to [{:?}]", va.va, ra.addr());
+            info!("Change vip [{:?}] to [{:?}]", va.va, ra.addr());
             va.ra = ra.clone();
         }
 
@@ -138,7 +138,7 @@ impl RouteTable {
         let ra = match self.get_ra(addr) {
             Some(ra) => ra,
             None => {
-                log::debug!("an orphan packet");
+                debug!("an orphan packet");
                 return None;
             }
         };
@@ -148,7 +148,7 @@ impl RouteTable {
             if v.ra.addr() == *addr {
                 v.ra.recv();
             } else {
-                log::info!("Change vip [{:?}] to [{:?}]", va, ra.addr());
+                info!("Change vip [{:?}] to [{:?}]", va, ra.addr());
                 v.ra = ra;
             }
         }) {
@@ -175,7 +175,7 @@ impl RouteTable {
         let now = Instant::now();
         self.va_map.retain(|_, v| {
             if now.duration_since(v.last_recv) > RECYCLE_VA_TIMEOUT {
-                log::info!("Recycle vip [{:?}] at [{:}]", v.va, v.ra.addr());
+                info!("Recycle vip [{:?}] at [{:}]", v.va, v.ra.addr());
                 return false;
             } else {
                 return true;
@@ -183,7 +183,7 @@ impl RouteTable {
         });
         self.ra_map.retain(|_, v| {
             if now.duration_since(v.last_recv()) > RECYCLE_VA_TIMEOUT {
-                log::info!("Recycle client [{:?}]", v.addr());
+                info!("Recycle client [{:?}]", v.addr());
                 return false;
             } else {
                 return true;

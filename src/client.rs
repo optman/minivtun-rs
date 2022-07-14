@@ -2,10 +2,14 @@ use crate::config::Config;
 use crate::msg;
 use crate::poll;
 use crate::{
-    msg::{builder::Builder, ipdata},
+    msg::Op,
+    msg::{
+        builder::Builder,
+        ipdata::{Kind, Packet},
+    },
     state::State,
 };
-use log;
+use log::{debug, info, trace, warn};
 use std::error::Error;
 use std::io::{Read, Write};
 use std::net::UdpSocket;
@@ -46,7 +50,7 @@ impl Client {
         poll::poll(self.tun.as_raw_fd(), self.socket.as_raw_fd(), self)
     }
 
-    fn forward_remote(&mut self, kind: ipdata::Kind, pkt: &[u8]) -> Result {
+    fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result {
         let buf = msg::Builder::default()
             .cryptor(self.config.cryptor.build())?
             .seq(self.state.next_seq())?
@@ -65,7 +69,7 @@ impl Client {
                 self.tun.write(pkt)?;
             }
             _ => {
-                log::debug!("[FWD]invalid packet!")
+                debug!("[FWD]invalid packet!")
             }
         }
 
@@ -99,13 +103,13 @@ impl poll::Reactor for Client {
         let size = self.tun.read(&mut buf)?;
         match buf[0] >> 4 {
             4 => {
-                self.forward_remote(ipdata::Kind::V4, &buf[..size])?;
+                self.forward_remote(Kind::V4, &buf[..size])?;
             }
             6 => {
-                self.forward_remote(ipdata::Kind::V6, &buf[..size])?;
+                self.forward_remote(Kind::V6, &buf[..size])?;
             }
             _ => {
-                log::warn!("[INPUT]invalid packet");
+                warn!("[INPUT]invalid packet");
             }
         }
 
@@ -117,30 +121,30 @@ impl poll::Reactor for Client {
         let (size, src) = match self.socket.recv_from(&mut buf) {
             Ok((size, src)) => (size, src),
             Err(e) => {
-                log::debug!("recv from server fail. {:?}", e);
+                debug!("recv from server fail. {:?}", e);
                 return Ok(());
             }
         };
-        log::trace!("receive from  {:}, size {:}", src, size);
+        trace!("receive from  {:}, size {:}", src, size);
         match msg::Packet::with_cryptor(&buf[..size], self.config.cryptor.build()) {
             Ok(msg) => match msg.op() {
-                Ok(msg::Op::EchoAck) => {
-                    log::debug!("received echo ack");
+                Ok(Op::EchoAck) => {
+                    debug!("received echo ack");
                     self.state.last_ack = Some(Instant::now());
                 }
-                Ok(msg::Op::IpData) => {
-                    self.forward_local(ipdata::Packet::new(msg.payload()?)?.payload()?)?;
+                Ok(Op::IpData) => {
+                    self.forward_local(Packet::new(msg.payload()?)?.payload()?)?;
                 }
-                Ok(msg::Op::EchoReq) => {
-                    log::debug!("received echo req(from old version server?)");
+                Ok(Op::EchoReq) => {
+                    debug!("received echo req(from old version server?)");
                     self.state.last_ack = Some(Instant::now());
                 }
                 _ => {
-                    log::debug!("unexpected msg {:?}", msg.op());
+                    debug!("unexpected msg {:?}", msg.op());
                 }
             },
             _ => {
-                log::trace!("invalid packet")
+                trace!("invalid packet")
             }
         }
 
@@ -158,12 +162,12 @@ impl poll::Reactor for Client {
             });
 
             if reconnect {
-                log::info!("Reconnect...");
+                info!("Reconnect...");
                 self.state.last_connect = Some(Instant::now());
                 let _ = self
                     .socket
                     .connect(self.config.server_addr.as_ref().unwrap())
-                    .map_err(|e| log::debug!("{:?}", e));
+                    .map_err(|e| debug!("{:?}", e));
             }
         };
 
