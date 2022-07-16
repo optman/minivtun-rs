@@ -23,26 +23,25 @@ use crate::error::Result;
 /// whole packet has been created.
 pub trait Finalizer<B> {
     /// Run the finalizer on the given buffer.
-    fn finalize(self: Box<Self>, buffer: B) -> Result<B>;
+    fn finalize(&self, buffer: B) -> Result<B>;
 }
 
-impl<B, F: FnOnce(B) -> Result<B>> Finalizer<B> for F {
-    fn finalize(self: Box<F>, buffer: B) -> Result<B> {
-        let f = *self;
-        f(buffer)
+impl<'a, B, F: Fn(B) -> Result<B> + 'a> Finalizer<B> for F {
+    fn finalize(&self, buffer: B) -> Result<B> {
+        self(buffer)
     }
 }
 
 /// Takes care of grouping finalizers through the builder chain.
-pub struct Finalization<B>(Vec<Box<dyn Finalizer<B>>>);
+pub struct Finalization<'a, B>(Vec<&'a dyn Finalizer<B>>);
 
-impl<B> Default for Finalization<B> {
+impl<'a, B> Default for Finalization<'a, B> {
     fn default() -> Self {
         Finalization(Default::default())
     }
 }
 
-impl<B> fmt::Debug for Finalization<B> {
+impl<'a, B> fmt::Debug for Finalization<'a, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("builder::Finalization")
             .field("length", &self.0.len())
@@ -50,14 +49,18 @@ impl<B> fmt::Debug for Finalization<B> {
     }
 }
 
-impl<B> Finalization<B> {
+impl<'a, B> Finalization<'a, B> {
     /// Add a new finalizer.
-    pub fn add<F: FnOnce(B) -> Result<B> + 'static>(&mut self, finalizer: F) {
-        self.0.push(Box::new(finalizer));
+    pub fn add(&mut self, finalizer: &'a dyn Finalizer<B>) {
+        self.0.push(finalizer);
+    }
+
+    pub fn add_fn<F: Fn(B) -> Result<B>>(&mut self, finalizer: &'a F) {
+        self.0.push(finalizer);
     }
 
     /// Add a serie of finalizers.
-    pub fn extend<I: IntoIterator<Item = Box<dyn Finalizer<B>>>>(&mut self, finalizers: I) {
+    pub fn extend<I: IntoIterator<Item = &'a dyn Finalizer<B>>>(&mut self, finalizers: I) {
         self.0.extend(finalizers.into_iter());
     }
 
@@ -74,30 +77,30 @@ impl<B> Finalization<B> {
     }
 }
 
-impl<B> IntoIterator for Finalization<B> {
-    type Item = Box<dyn Finalizer<B>>;
-    type IntoIter = ::std::vec::IntoIter<Box<dyn Finalizer<B>>>;
+impl<'a, B> IntoIterator for Finalization<'a, B> {
+    type Item = &'a dyn Finalizer<B>;
+    type IntoIter = ::std::vec::IntoIter<&'a dyn Finalizer<B>>;
 
-    fn into_iter(self) -> ::std::vec::IntoIter<Box<dyn Finalizer<B>>> {
+    fn into_iter(self) -> ::std::vec::IntoIter<&'a dyn Finalizer<B>> {
         self.0.into_iter()
     }
 }
 
-impl<B> Into<Vec<Box<dyn Finalizer<B>>>> for Finalization<B> {
-    fn into(self) -> Vec<Box<dyn Finalizer<B>>> {
+impl<'a, B> Into<Vec<&'a dyn Finalizer<B>>> for Finalization<'a, B> {
+    fn into(self) -> Vec<&'a dyn Finalizer<B>> {
         self.0
     }
 }
 
 /// A packet `Builder`.
-pub trait Builder<B: Buffer> {
+pub trait Builder<'a, B: Buffer> {
     /// Create a new packet `Builder` with the given buffer.
     fn with(buffer: B) -> Result<Self>
     where
         Self: Sized;
 
     /// Access the finalizers.
-    fn finalizer(&mut self) -> &mut Finalization<Vec<u8>>;
+    fn finalizer(&mut self) -> &mut Finalization<'a, Vec<u8>>;
 
     /// Build the packet.
     fn build(self) -> Result<Vec<u8>>;

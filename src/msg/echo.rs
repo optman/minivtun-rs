@@ -7,12 +7,12 @@ use packet::{buffer::Dynamic, Buffer};
 
 const PACKET_SIZE: usize = 24;
 
-pub struct Builder<B: Buffer = Dynamic> {
+pub struct Builder<'a, B: Buffer = Dynamic> {
     buffer: B,
-    finalizer: Finalization<Vec<u8>>,
+    finalizer: Finalization<'a, Vec<u8>>,
 }
 
-impl<B: Buffer> Build<B> for Builder<B> {
+impl<'a, B: Buffer> Build<'a, B> for Builder<'a, B> {
     fn with(mut buf: B) -> Result<Self> {
         buf.next(PACKET_SIZE)?;
         Ok(Builder {
@@ -21,7 +21,7 @@ impl<B: Buffer> Build<B> for Builder<B> {
         })
     }
 
-    fn finalizer(&mut self) -> &mut Finalization<Vec<u8>> {
+    fn finalizer(&mut self) -> &mut Finalization<'a, Vec<u8>> {
         &mut self.finalizer
     }
 
@@ -32,13 +32,13 @@ impl<B: Buffer> Build<B> for Builder<B> {
     }
 }
 
-impl Default for Builder<Dynamic> {
+impl<'a> Default for Builder<'a, Dynamic> {
     fn default() -> Self {
         Builder::with(Dynamic::default()).unwrap()
     }
 }
 
-impl<B: Buffer> Builder<B> {
+impl<'a, B: Buffer> Builder<'_, B> {
     pub fn id(mut self, id: u32) -> Result<Self> {
         BigEndian::write_u32(&mut self.buffer.data_mut()[20..], id);
         Ok(self)

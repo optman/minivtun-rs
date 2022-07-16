@@ -14,14 +14,14 @@ pub enum Kind {
 
 const HEADER_SIZE: usize = 4;
 
-pub struct Builder<B: Buffer = Dynamic> {
+pub struct Builder<'a, B: Buffer = Dynamic> {
     buffer: B,
     kind: bool,
     payload: bool,
-    finalizer: Finalization<Vec<u8>>,
+    finalizer: Finalization<'a, Vec<u8>>,
 }
 
-impl<B: Buffer> Build<B> for Builder<B> {
+impl<'a, B: Buffer> Build<'a, B> for Builder<'a, B> {
     fn with(mut buf: B) -> Result<Self> {
         buf.next(HEADER_SIZE)?;
         Ok(Builder {
@@ -32,7 +32,7 @@ impl<B: Buffer> Build<B> for Builder<B> {
         })
     }
 
-    fn finalizer(&mut self) -> &mut Finalization<Vec<u8>> {
+    fn finalizer(&mut self) -> &mut Finalization<'a, Vec<u8>> {
         &mut self.finalizer
     }
 
@@ -47,20 +47,20 @@ impl<B: Buffer> Build<B> for Builder<B> {
     }
 }
 
-impl Default for Builder<Dynamic> {
+impl<'a> Default for Builder<'a, Dynamic> {
     fn default() -> Self {
         Builder::with(Dynamic::default()).unwrap()
     }
 }
 
-impl<B: Buffer> Builder<B> {
+impl<'a, B: Buffer> Builder<'a, B> {
     pub fn kind(mut self, kind: Kind) -> Result<Self> {
         self.kind = true;
         BigEndian::write_u16(&mut self.buffer.data_mut()[0..], kind as u16);
         Ok(self)
     }
 
-    pub fn payload<'a, T: IntoIterator<Item = &'a u8>>(mut self, value: T) -> Result<Self> {
+    pub fn payload<'b, T: IntoIterator<Item = &'b u8>>(mut self, value: T) -> Result<Self> {
         if self.payload {
             Err(Error::InvalidPacket)?
         }
