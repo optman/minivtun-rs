@@ -81,7 +81,7 @@ impl<'a, B> IntoIterator for Finalization<'a, B> {
     type Item = &'a dyn Finalizer<B>;
     type IntoIter = ::std::vec::IntoIter<&'a dyn Finalizer<B>>;
 
-    fn into_iter(self) -> ::std::vec::IntoIter<&'a dyn Finalizer<B>> {
+    fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }

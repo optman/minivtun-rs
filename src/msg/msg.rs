@@ -71,17 +71,16 @@ impl<'a, B: Buffer> Builder<'a, B> {
         Ok(self)
     }
 
-    pub fn payload<'b, T: IntoIterator<Item = &'b u8>>(mut self, value: T) -> Result<Self> {
+    pub fn payload(mut self, value: &[u8]) -> Result<Self> {
         if self.payload {
             Err(Error::InvalidPacket)?
         }
 
         self.payload = true;
 
-        for byte in value {
-            self.buffer.more(1)?;
-            *self.buffer.data_mut().last_mut().unwrap() = *byte;
-        }
+        let i = self.buffer.length();
+        self.buffer.more(value.len())?;
+        self.buffer.data_mut()[i..].copy_from_slice(value);
 
         Ok(self)
     }
