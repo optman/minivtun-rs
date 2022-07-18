@@ -189,8 +189,7 @@ mod tests {
         let key: Vec<u8> = repeat(1).take(16).collect();
         let key: [u8; 16] = key.try_into().unwrap();
 
-        let cryptor: Option<Rc<Box<dyn Cryptor>>> =
-            Some(Rc::new(Box::new(Aes128Cryptor::new(&key))));
+        let cryptor: Option<Box<dyn Cryptor>> = Some(Box::new(Aes128Cryptor::new(&key)));
 
         let buf = Builder::default()
             .seq(1)
