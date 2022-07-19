@@ -4,6 +4,7 @@ use crate::msg::builder::{Builder as Build, Finalization, Finalizer};
 use byteorder::{BigEndian, ByteOrder};
 use num_enum::TryFromPrimitive;
 use packet::{buffer::Dynamic, Buffer};
+use std::borrow::Cow;
 use std::convert::TryFrom;
 
 #[derive(PartialEq, Debug, TryFromPrimitive)]
@@ -133,7 +134,7 @@ pub struct Packet<B> {
     buffer: B,
 }
 
-impl<B: AsRef<[u8]>> Packet<B> {
+impl<'a, B: 'a + AsRef<[u8]>> Packet<B> {
     pub fn new(buf: B) -> Result<Self> {
         if buf.as_ref().len() < HEADER_SIZE {
             Err(Error::InvalidPacket)?
@@ -142,20 +143,23 @@ impl<B: AsRef<[u8]>> Packet<B> {
         Ok(Self { buffer: buf })
     }
 
-    pub fn with_cryptor(buffer: B, cryptor: &Option<Box<dyn Cryptor>>) -> Result<Packet<Vec<u8>>> {
+    pub fn with_cryptor(
+        buffer: &'a B,
+        cryptor: &Option<Box<dyn Cryptor>>,
+    ) -> Result<Packet<Cow<'a, [u8]>>> {
         if buffer.as_ref().len() < HEADER_SIZE {
             Err(Error::InvalidPacket)?
         }
 
         let out = match cryptor {
-            None => buffer.as_ref().to_vec(),
+            None => buffer.as_ref().into(),
             Some(cryptor) => {
                 let out = cryptor.decrypt(buffer.as_ref())?;
                 if out[4..20] != *cryptor.auth_key() {
                     Err(Error::InvalidPacket)?
                 };
 
-                out
+                out.into()
             }
         };
         Packet::new(out)
@@ -205,7 +209,8 @@ mod tests {
 
         assert_eq!(buf.len(), 20 + 12); //align to block size
 
-        let p = Packet::with_cryptor(buf, &cryptor).unwrap();
+        let buf = &buf[..];
+        let p = Packet::with_cryptor(&buf, &cryptor).unwrap();
         assert_eq!(p.seq().unwrap(), 1);
 
         let buf = Builder::default()
@@ -222,7 +227,8 @@ mod tests {
 
         assert_eq!(buf.len(), 20 + 24 + 4 /*padding*/);
 
-        let p = Packet::with_cryptor(buf, &cryptor).unwrap();
+        let buf = &buf[..];
+        let p = Packet::with_cryptor(&buf, &cryptor).unwrap();
 
         assert_eq!(p.op().unwrap(), Op::EchoReq);
 

@@ -2,11 +2,7 @@ use crate::util::{dest_ip, source_ip};
 use crate::{
     config::Config,
     msg,
-    msg::{
-        builder::Builder,
-        ipdata::{Kind, Packet},
-        Op,
-    },
+    msg::{builder::Builder, ipdata, ipdata::Kind, Op},
     poll,
     route::RouteTable,
     state::State,
@@ -160,11 +156,12 @@ impl poll::Reactor for Server {
                 return Ok(());
             }
         };
+
         trace!("receive from  {:}, size {:}", src, size);
-        match msg::Packet::with_cryptor(&buf[..size], &self.config.cryptor) {
+        match msg::Packet::with_cryptor(&&buf[..size], &self.config.cryptor) {
             Ok(msg) => match msg.op() {
                 Ok(Op::IpData) => {
-                    self.forward_local(&src, Packet::new(msg.payload()?)?.payload()?)?;
+                    self.forward_local(&src, ipdata::Packet::new(msg.payload()?)?.payload()?)?;
                 }
                 Ok(Op::EchoReq) => {
                     let echo = msg::echo::Packet::new(msg.payload()?)?;

@@ -3,10 +3,7 @@ use crate::msg;
 use crate::poll;
 use crate::{
     msg::Op,
-    msg::{
-        builder::Builder,
-        ipdata::{Kind, Packet},
-    },
+    msg::{builder::Builder, ipdata, ipdata::Kind},
     state::State,
 };
 use log::{debug, info, trace, warn};
@@ -126,14 +123,14 @@ impl poll::Reactor for Client {
             }
         };
         trace!("receive from  {:}, size {:}", src, size);
-        match msg::Packet::with_cryptor(&buf[..size], &self.config.cryptor) {
+        match msg::Packet::with_cryptor(&&buf[..size], &self.config.cryptor) {
             Ok(msg) => match msg.op() {
                 Ok(Op::EchoAck) => {
                     debug!("received echo ack");
                     self.state.last_ack = Some(Instant::now());
                 }
                 Ok(Op::IpData) => {
-                    self.forward_local(Packet::new(msg.payload()?)?.payload()?)?;
+                    self.forward_local(ipdata::Packet::new(msg.payload()?)?.payload()?)?;
                 }
                 Ok(Op::EchoReq) => {
                     debug!("received echo req(from old version server?)");
