@@ -125,9 +125,9 @@ impl<'a, B: Buffer> Builder<'a, B> {
 }
 
 impl Finalizer for Box<dyn Cryptor> {
-    fn finalize(&self, buffer: &mut [u8]) -> Result<Vec<u8>> {
+    fn finalize<'a>(&self, buffer: &'a mut [u8]) -> Result<Cow<'a, [u8]>> {
         buffer[4..20].copy_from_slice(self.auth_key());
-        Ok(self.encrypt(&buffer)?)
+        Ok(Cow::Owned(self.encrypt(&buffer)?))
     }
 }
 

@@ -17,6 +17,7 @@ use std::fmt;
 use packet::Buffer;
 
 use crate::error::Result;
+
 use std::borrow::Cow;
 
 /// A finalizer used by builders to complete building the packet, this is
@@ -24,11 +25,11 @@ use std::borrow::Cow;
 /// whole packet has been created.
 pub trait Finalizer {
     /// Run the finalizer on the given buffer.
-    fn finalize(&self, buffer: &mut [u8]) -> Result<Vec<u8>>;
+    fn finalize<'a>(&self, buffer: &'a mut [u8]) -> Result<Cow<'a, [u8]>>;
 }
 
-impl<'a, F: Fn(&mut [u8]) -> Result<Vec<u8>> + 'a> Finalizer for F {
-    fn finalize(&self, buffer: &mut [u8]) -> Result<Vec<u8>> {
+impl<F: Fn(&mut [u8]) -> Result<Cow<'_, [u8]>>> Finalizer for F {
+    fn finalize<'b>(&self, buffer: &'b mut [u8]) -> Result<Cow<'b, [u8]>> {
         self(buffer)
     }
 }
@@ -56,7 +57,7 @@ impl<'a> Finalization<'a> {
         self.0.push(finalizer);
     }
 
-    pub fn add_fn<F: Fn(&mut [u8]) -> Result<Vec<u8>>>(&mut self, finalizer: &'a F) {
+    pub fn add_fn<F: Fn(&mut [u8]) -> Result<Cow<'_, [u8]>>>(&mut self, finalizer: &'a F) {
         self.0.push(finalizer);
     }
 
@@ -67,19 +68,27 @@ impl<'a> Finalization<'a> {
 
     /// Finalize a buffer.
     pub fn finalize<'b>(self, buffer: &'b mut [u8]) -> Result<Cow<'b, [u8]>> {
-        let mut out = None;
+        let mut out: Option<Cow<'_, [u8]>> = None;
         for finalizer in self.0.into_iter()
         /*.rev()*/
         {
-            out = match out {
-                None => Some(finalizer.finalize(buffer)?),
-                Some(mut out) => Some(finalizer.finalize(&mut out)?),
+            let inner_out = match out {
+                None => match finalizer.finalize(buffer)? {
+                    Cow::Borrowed(_) => None,
+                    Cow::Owned(b) => Some(Cow::Owned(b)),
+                },
+                Some(ref mut out) => Some(finalizer.finalize(out.to_mut())?),
             };
+
+            match inner_out {
+                Some(Cow::Owned(b)) => out = Some(Cow::Owned(b)),
+                _ => {}
+            }
         }
 
         let out = match out {
             None => Cow::Borrowed(buffer),
-            Some(out) => Cow::Owned(out),
+            Some(out) => Cow::Owned(out.into_owned()),
         };
 
         Ok(out)
