@@ -9,7 +9,7 @@ const PACKET_SIZE: usize = 24;
 
 pub struct Builder<'a, B: Buffer = Dynamic> {
     buffer: B,
-    finalizer: Finalization<'a, Vec<u8>>,
+    finalizer: Finalization<'a>,
 }
 
 impl<'a, B: Buffer> Build<'a, B> for Builder<'a, B> {
@@ -21,14 +21,15 @@ impl<'a, B: Buffer> Build<'a, B> for Builder<'a, B> {
         })
     }
 
-    fn finalizer(&mut self) -> &mut Finalization<'a, Vec<u8>> {
+    fn finalizer(&mut self) -> &mut Finalization<'a> {
         &mut self.finalizer
     }
 
     fn build(self) -> Result<Vec<u8>> {
         Ok(self
             .finalizer
-            .finalize(self.buffer.into_inner().as_mut().to_vec())?)
+            .finalize(self.buffer.into_inner().as_mut())?
+            .into_owned())
     }
 }
 

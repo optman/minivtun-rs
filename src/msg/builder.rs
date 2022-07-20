@@ -17,31 +17,32 @@ use std::fmt;
 use packet::Buffer;
 
 use crate::error::Result;
+use std::borrow::Cow;
 
 /// A finalizer used by builders to complete building the packet, this is
 /// usually used to calculate the checksum and update length fields after the
 /// whole packet has been created.
-pub trait Finalizer<B> {
+pub trait Finalizer {
     /// Run the finalizer on the given buffer.
-    fn finalize(&self, buffer: B) -> Result<B>;
+    fn finalize(&self, buffer: &mut [u8]) -> Result<Vec<u8>>;
 }
 
-impl<'a, B, F: Fn(B) -> Result<B> + 'a> Finalizer<B> for F {
-    fn finalize(&self, buffer: B) -> Result<B> {
+impl<'a, F: Fn(&mut [u8]) -> Result<Vec<u8>> + 'a> Finalizer for F {
+    fn finalize(&self, buffer: &mut [u8]) -> Result<Vec<u8>> {
         self(buffer)
     }
 }
 
 /// Takes care of grouping finalizers through the builder chain.
-pub struct Finalization<'a, B>(Vec<&'a dyn Finalizer<B>>);
+pub struct Finalization<'a>(Vec<&'a dyn Finalizer>);
 
-impl<'a, B> Default for Finalization<'a, B> {
+impl<'a> Default for Finalization<'a> {
     fn default() -> Self {
         Finalization(Default::default())
     }
 }
 
-impl<'a, B> fmt::Debug for Finalization<'a, B> {
+impl<'a> fmt::Debug for Finalization<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("builder::Finalization")
             .field("length", &self.0.len())
@@ -49,45 +50,53 @@ impl<'a, B> fmt::Debug for Finalization<'a, B> {
     }
 }
 
-impl<'a, B> Finalization<'a, B> {
+impl<'a> Finalization<'a> {
     /// Add a new finalizer.
-    pub fn add(&mut self, finalizer: &'a dyn Finalizer<B>) {
+    pub fn add(&mut self, finalizer: &'a dyn Finalizer) {
         self.0.push(finalizer);
     }
 
-    pub fn add_fn<F: Fn(B) -> Result<B>>(&mut self, finalizer: &'a F) {
+    pub fn add_fn<F: Fn(&mut [u8]) -> Result<Vec<u8>>>(&mut self, finalizer: &'a F) {
         self.0.push(finalizer);
     }
 
     /// Add a serie of finalizers.
-    pub fn extend<I: IntoIterator<Item = &'a dyn Finalizer<B>>>(&mut self, finalizers: I) {
+    pub fn extend<I: IntoIterator<Item = &'a dyn Finalizer>>(&mut self, finalizers: I) {
         self.0.extend(finalizers.into_iter());
     }
 
     /// Finalize a buffer.
-    pub fn finalize(self, buffer: B) -> Result<B> {
-        let mut b = buffer;
+    pub fn finalize<'b>(self, buffer: &'b mut [u8]) -> Result<Cow<'b, [u8]>> {
+        let mut out = None;
         for finalizer in self.0.into_iter()
         /*.rev()*/
         {
-            b = finalizer.finalize(b)?;
+            out = match out {
+                None => Some(finalizer.finalize(buffer)?),
+                Some(mut out) => Some(finalizer.finalize(&mut out)?),
+            };
         }
 
-        Ok(b)
+        let out = match out {
+            None => Cow::Borrowed(buffer),
+            Some(out) => Cow::Owned(out),
+        };
+
+        Ok(out)
     }
 }
 
-impl<'a, B> IntoIterator for Finalization<'a, B> {
-    type Item = &'a dyn Finalizer<B>;
-    type IntoIter = ::std::vec::IntoIter<&'a dyn Finalizer<B>>;
+impl<'a> IntoIterator for Finalization<'a> {
+    type Item = &'a dyn Finalizer;
+    type IntoIter = ::std::vec::IntoIter<&'a dyn Finalizer>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
 
-impl<'a, B> Into<Vec<&'a dyn Finalizer<B>>> for Finalization<'a, B> {
-    fn into(self) -> Vec<&'a dyn Finalizer<B>> {
+impl<'a> Into<Vec<&'a dyn Finalizer>> for Finalization<'a> {
+    fn into(self) -> Vec<&'a dyn Finalizer> {
         self.0
     }
 }
@@ -100,7 +109,7 @@ pub trait Builder<'a, B: Buffer> {
         Self: Sized;
 
     /// Access the finalizers.
-    fn finalizer(&mut self) -> &mut Finalization<'a, Vec<u8>>;
+    fn finalizer(&mut self) -> &mut Finalization<'a>;
 
     /// Build the packet.
     fn build(self) -> Result<Vec<u8>>;

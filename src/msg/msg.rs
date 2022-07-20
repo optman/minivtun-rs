@@ -22,7 +22,7 @@ pub struct Builder<'a, B: Buffer = Dynamic> {
     buffer: B,
     kind: bool,
     payload: bool,
-    finalizer: Finalization<'a, Vec<u8>>,
+    finalizer: Finalization<'a>,
 }
 
 impl<'a, B: Buffer> Build<'a, B> for Builder<'a, B> {
@@ -36,7 +36,7 @@ impl<'a, B: Buffer> Build<'a, B> for Builder<'a, B> {
         })
     }
 
-    fn finalizer(&mut self) -> &mut Finalization<'a, Vec<u8>> {
+    fn finalizer(&mut self) -> &mut Finalization<'a> {
         &mut self.finalizer
     }
 
@@ -47,7 +47,8 @@ impl<'a, B: Buffer> Build<'a, B> for Builder<'a, B> {
 
         Ok(self
             .finalizer
-            .finalize(self.buffer.into_inner().as_mut().to_vec())?)
+            .finalize(self.buffer.into_inner().as_mut())?
+            .into_owned())
     }
 }
 
@@ -123,8 +124,8 @@ impl<'a, B: Buffer> Builder<'a, B> {
     }
 }
 
-impl Finalizer<Vec<u8>> for Box<dyn Cryptor> {
-    fn finalize(&self, mut buffer: Vec<u8>) -> Result<Vec<u8>> {
+impl Finalizer for Box<dyn Cryptor> {
+    fn finalize(&self, buffer: &mut [u8]) -> Result<Vec<u8>> {
         buffer[4..20].copy_from_slice(self.auth_key());
         Ok(self.encrypt(&buffer)?)
     }
