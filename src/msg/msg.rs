@@ -135,7 +135,7 @@ pub struct Packet<B> {
     buffer: B,
 }
 
-impl<'a, B: 'a + AsRef<[u8]>> Packet<B> {
+impl<B: AsRef<[u8]>> Packet<B> {
     pub fn new(buf: B) -> Result<Self> {
         if buf.as_ref().len() < HEADER_SIZE {
             Err(Error::InvalidPacket)?
@@ -144,7 +144,7 @@ impl<'a, B: 'a + AsRef<[u8]>> Packet<B> {
         Ok(Self { buffer: buf })
     }
 
-    pub fn with_cryptor(
+    pub fn with_cryptor<'a>(
         buffer: &'a B,
         cryptor: &Option<Box<dyn Cryptor>>,
     ) -> Result<Packet<Cow<'a, [u8]>>> {
