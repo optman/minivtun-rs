@@ -123,7 +123,7 @@ impl poll::Reactor for Client {
             }
         };
         trace!("receive from  {:}, size {:}", src, size);
-        match msg::Packet::with_cryptor(&&buf[..size], &self.config.cryptor) {
+        match msg::Packet::<&[u8]>::with_cryptor(&mut &mut buf[..size], &self.config.cryptor) {
             Ok(msg) => match msg.op() {
                 Ok(Op::EchoAck) => {
                     debug!("received echo ack");

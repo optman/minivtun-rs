@@ -127,7 +127,7 @@ impl<'a, B: Buffer> Builder<'a, B> {
 impl Finalizer for Box<dyn Cryptor> {
     fn finalize<'a>(&self, buffer: &'a mut [u8]) -> Result<Cow<'a, [u8]>> {
         buffer[4..20].copy_from_slice(self.auth_key());
-        Ok(Cow::Owned(self.encrypt(&buffer)?))
+        Ok(Cow::Owned(self.encrypt_vec(&buffer)?))
     }
 }
 
@@ -145,22 +145,22 @@ impl<B: AsRef<[u8]>> Packet<B> {
     }
 
     pub fn with_cryptor<'a>(
-        buffer: &'a B,
+        buffer: &'a mut [u8],
         cryptor: &Option<Box<dyn Cryptor>>,
-    ) -> Result<Packet<Cow<'a, [u8]>>> {
+    ) -> Result<Packet<&'a [u8]>> {
         if buffer.as_ref().len() < HEADER_SIZE {
             Err(Error::InvalidPacket)?
         }
 
         let out = match cryptor {
-            None => buffer.as_ref().into(),
+            None => buffer,
             Some(cryptor) => {
-                let out = cryptor.decrypt(buffer.as_ref())?;
+                let out = cryptor.decrypt(buffer)?;
                 if out[4..20] != *cryptor.auth_key() {
                     Err(Error::InvalidPacket)?
                 };
 
-                out.into()
+                out
             }
         };
         Packet::new(out)
@@ -196,7 +196,7 @@ mod tests {
 
         let cryptor: Option<Box<dyn Cryptor>> = Some(Box::new(Aes128Cryptor::new(&key)));
 
-        let buf = Builder::default()
+        let mut buf = Builder::default()
             .seq(1)
             .unwrap()
             .op(Op::EchoAck)
@@ -210,11 +210,11 @@ mod tests {
 
         assert_eq!(buf.len(), 20 + 12); //align to block size
 
-        let buf = &buf[..];
-        let p = Packet::with_cryptor(&buf, &cryptor).unwrap();
+        let mut buf = &mut buf[..];
+        let p = Packet::<&[u8]>::with_cryptor(&mut buf, &cryptor).unwrap();
         assert_eq!(p.seq().unwrap(), 1);
 
-        let buf = Builder::default()
+        let mut buf = Builder::default()
             .cryptor(&cryptor)
             .unwrap()
             .seq(1)
@@ -228,8 +228,8 @@ mod tests {
 
         assert_eq!(buf.len(), 20 + 24 + 4 /*padding*/);
 
-        let buf = &buf[..];
-        let p = Packet::with_cryptor(&buf, &cryptor).unwrap();
+        let mut buf = &mut buf[..];
+        let p = Packet::<&[u8]>::with_cryptor(&mut buf, &cryptor).unwrap();
 
         assert_eq!(p.op().unwrap(), Op::EchoReq);
 

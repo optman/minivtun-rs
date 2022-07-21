@@ -93,14 +93,30 @@ where
         &self.auth_key
     }
 
-    fn encrypt(&self, buffer: &[u8]) -> Result<Vec<u8>, Error> {
+    fn encrypt<'a>(&self, buffer: &'a mut [u8], pos: usize) -> Result<&'a [u8], Error> {
+        let cipher =
+            T::new_from_slices(&self.key[..KEY_SIZE], &IV[..16]).map_err(|_| Error::EncryptFail)?;
+
+        Ok(cipher
+            .encrypt(buffer, pos)
+            .map_err(|_| Error::EncryptFail)?)
+    }
+
+    fn decrypt<'a>(&self, buffer: &'a mut [u8]) -> Result<&'a [u8], Error> {
+        let cipher =
+            T::new_from_slices(&self.key[..KEY_SIZE], &IV[..16]).map_err(|_| Error::EncryptFail)?;
+
+        Ok(cipher.decrypt(buffer).map_err(|_| Error::DecryptFail)?)
+    }
+
+    fn encrypt_vec(&self, buffer: &[u8]) -> Result<Vec<u8>, Error> {
         let cipher =
             T::new_from_slices(&self.key[..KEY_SIZE], &IV[..16]).map_err(|_| Error::EncryptFail)?;
 
         Ok(cipher.encrypt_vec(buffer))
     }
 
-    fn decrypt(&self, buffer: &[u8]) -> Result<Vec<u8>, Error> {
+    fn decrypt_vec(&self, buffer: &[u8]) -> Result<Vec<u8>, Error> {
         let cipher =
             T::new_from_slices(&self.key[..KEY_SIZE], &IV[..16]).map_err(|_| Error::EncryptFail)?;
 
@@ -122,9 +138,9 @@ mod tests {
 
         let c = Aes128Cryptor::new(&key);
 
-        let cipher_txt = c.encrypt(&data).unwrap();
+        let cipher_txt = c.encrypt_vec(&data).unwrap();
 
-        let plain_txt = c.decrypt(&cipher_txt).unwrap();
+        let plain_txt = c.decrypt_vec(&cipher_txt).unwrap();
 
         assert_eq!(data, plain_txt);
     }
