@@ -9,6 +9,7 @@ use crate::{
 use log::{debug, info, trace, warn};
 use std::error::Error;
 use std::io::{Read, Write};
+use std::mem;
 use std::net::UdpSocket;
 use std::os::unix::io::AsRawFd;
 use std::time::Instant;
@@ -96,7 +97,7 @@ impl Client {
 
 impl poll::Reactor for Client {
     fn tunnel_recv(&mut self) -> Result {
-        let mut buf = [0; 1600];
+        let mut buf: [u8; 1500] = unsafe { mem::MaybeUninit::uninit().assume_init() };
         let size = self.tun.read(&mut buf)?;
         match buf[0] >> 4 {
             4 => {
@@ -114,7 +115,7 @@ impl poll::Reactor for Client {
     }
 
     fn network_recv(&mut self) -> Result {
-        let mut buf = [0; 1600];
+        let mut buf: [u8; 1500] = unsafe { mem::MaybeUninit::uninit().assume_init() };
         let (size, src) = match self.socket.recv_from(&mut buf) {
             Ok((size, src)) => (size, src),
             Err(e) => {

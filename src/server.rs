@@ -10,6 +10,7 @@ use crate::{
 use log::{debug, trace, warn};
 use std::error::Error;
 use std::io::{Read, Write};
+use std::mem;
 use std::net::{SocketAddr, UdpSocket};
 use std::os::unix::io::AsRawFd;
 use tun::platform::Device;
@@ -126,7 +127,7 @@ impl Server {
 
 impl poll::Reactor for Server {
     fn tunnel_recv(&mut self) -> Result {
-        let mut buf = [0; 1600];
+        let mut buf: [u8; 1500] = unsafe { mem::MaybeUninit::uninit().assume_init() };
         let size = self.tun.read(&mut buf)?;
         match buf[0] >> 4 {
             4 => {
@@ -148,7 +149,7 @@ impl poll::Reactor for Server {
     }
 
     fn network_recv(&mut self) -> Result {
-        let mut buf = [0; 1600];
+        let mut buf: [u8; 1500] = unsafe { mem::MaybeUninit::uninit().assume_init() };
         let (size, src) = match self.socket.recv_from(&mut buf) {
             Ok((size, src)) => (size, src),
             Err(e) => {
