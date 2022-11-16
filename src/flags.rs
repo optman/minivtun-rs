@@ -38,6 +38,7 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         .arg(Arg::from_usage("-M, --metric [metric]               'metric of attached routes'"))
         .arg(Arg::from_usage("-F, --fwmark [fwmark_num]           'fwmark set on vpn traffic'"))
         .arg(Arg::from_usage("-w, --wait-dns                      'wait for DNS resolve ready after service started'"))
+        .arg(Arg::from_usage("    --rebind                        'rebind socket before reconnect"))
         .get_matches();
 
     if let Some(local) = matches.value_of("local") {
@@ -140,6 +141,10 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
 
     if matches.is_present("wait-dns") {
         config.wait_dns = true;
+    }
+
+    if matches.is_present("rebind") {
+        config.rebind = true;
     }
 
     Ok(())

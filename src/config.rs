@@ -21,6 +21,7 @@ pub struct Config {
     pub metric: Option<String>,
     pub fwmark: Option<u32>,
     pub wait_dns: bool,
+    pub rebind: bool,
 }
 
 #[cfg(test)]

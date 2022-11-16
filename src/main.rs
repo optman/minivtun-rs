@@ -101,18 +101,24 @@ fn main() -> Result<(), Box<dyn Error>> {
     let listen_addr = config
         .listen_addr
         .unwrap_or(default_listen_addr.parse().unwrap());
-    let socket = UdpSocket::bind(listen_addr)?;
-    socket.set_nonblocking(true)?;
 
-    #[cfg(target_os = "linux")]
-    if let Some(fwmark) = config.fwmark {
-        debug!("set fwmark {}", fwmark);
-        setsockopt(socket.as_raw_fd(), sockopt::Mark, &fwmark)?;
-    }
+    let socket_factory = |config: &Config| {
+        let socket = UdpSocket::bind(listen_addr).unwrap();
+        socket.set_nonblocking(true).unwrap();
+
+        #[cfg(target_os = "linux")]
+        if let Some(fwmark) = config.fwmark {
+            debug!("set fwmark {}", fwmark);
+            setsockopt(socket.as_raw_fd(), sockopt::Mark, &fwmark).unwrap();
+        }
+
+        socket
+    };
 
     //run
     match config.server_addr {
         None => {
+            let socket = socket_factory(&config);
             info!(
                 "Mini virtual tunneling server on {:}, interface: {:}.",
                 socket.local_addr().unwrap(),
@@ -132,7 +138,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             do_daemonize(&config);
 
-            Client::new(config, socket, tun).run()
+            Client::new(config, socket_factory, tun).run()
         }
     }
 }

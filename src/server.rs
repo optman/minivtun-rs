@@ -12,7 +12,7 @@ use std::error::Error;
 use std::io::{Read, Write};
 use std::mem;
 use std::net::{SocketAddr, UdpSocket};
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::{AsRawFd, RawFd};
 use tun::platform::Device;
 
 type Result = std::result::Result<(), Box<dyn Error>>;
@@ -44,7 +44,7 @@ impl Server {
             }
         }
 
-        poll::poll(self.tun.as_raw_fd(), self.socket.as_raw_fd(), self)
+        poll::poll(self.tun.as_raw_fd(), self)
     }
 
     fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result {
@@ -126,6 +126,9 @@ impl Server {
 }
 
 impl poll::Reactor for Server {
+    fn socket_fd(&self) -> RawFd {
+        self.socket.as_raw_fd()
+    }
     fn tunnel_recv(&mut self) -> Result {
         let mut buf: [u8; 1500] = unsafe { mem::MaybeUninit::uninit().assume_init() };
         let size = self.tun.read(&mut buf)?;

@@ -11,7 +11,7 @@ use std::error::Error;
 use std::io::{Read, Write};
 use std::mem;
 use std::net::UdpSocket;
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::time::Instant;
 use tun::platform::Device;
 
@@ -19,20 +19,26 @@ extern crate libc;
 
 type Result = std::result::Result<(), Box<dyn Error>>;
 
-pub struct Client {
+pub struct Client<T> {
     config: Config,
     socket: UdpSocket,
     state: State,
     tun: Device,
+    socket_factory: T,
 }
 
-impl Client {
-    pub fn new(config: Config, socket: UdpSocket, tun: Device) -> Self {
+impl<T> Client<T>
+where
+    T: Fn(&Config) -> UdpSocket,
+{
+    pub fn new(config: Config, socket_factory: T, tun: Device) -> Self {
+        let socket = socket_factory(&config);
         Self {
             config: config,
             socket: socket,
             tun: tun,
             state: Default::default(),
+            socket_factory: socket_factory,
         }
     }
 
@@ -45,7 +51,7 @@ impl Client {
         );
         self.state.last_connect = Some(Instant::now());
 
-        poll::poll(self.tun.as_raw_fd(), self.socket.as_raw_fd(), self)
+        poll::poll(self.tun.as_raw_fd(), self)
     }
 
     fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result {
@@ -95,7 +101,14 @@ impl Client {
     }
 }
 
-impl poll::Reactor for Client {
+impl<T> poll::Reactor for Client<T>
+where
+    T: Fn(&Config) -> UdpSocket,
+{
+    fn socket_fd(&self) -> RawFd {
+        self.socket.as_raw_fd()
+    }
+
     fn tunnel_recv(&mut self) -> Result {
         let mut buf: [u8; 1500] = unsafe { mem::MaybeUninit::uninit().assume_init() };
         let size = self.tun.read(&mut buf)?;
@@ -161,6 +174,12 @@ impl poll::Reactor for Client {
 
             if reconnect {
                 info!("Reconnect...");
+
+                if self.config.rebind {
+                    self.socket = (self.socket_factory)(&self.config);
+                    debug!("rebind to {:}", self.socket.local_addr().unwrap());
+                }
+
                 self.state.last_connect = Some(Instant::now());
                 let _ = self
                     .socket

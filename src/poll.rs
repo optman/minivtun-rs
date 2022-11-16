@@ -7,20 +7,22 @@ extern crate libc;
 type Result = std::result::Result<(), Box<dyn Error>>;
 
 pub trait Reactor {
+    fn socket_fd(&self) -> RawFd;
     fn keepalive(&mut self) -> Result;
     fn tunnel_recv(&mut self) -> Result;
     fn network_recv(&mut self) -> Result;
 }
 
-pub fn poll<T: Reactor>(tun_fd: RawFd, socket_fd: RawFd, mut reactor: T) -> Result {
-    let nfds = match tun_fd > socket_fd {
-        true => tun_fd,
-        false => socket_fd,
-    } + 1;
-
+pub fn poll<T: Reactor>(tun_fd: RawFd, mut reactor: T) -> Result {
     let mut fd_set: libc::fd_set = unsafe { mem::MaybeUninit::uninit().assume_init() };
 
     loop {
+        let socket_fd = reactor.socket_fd();
+
+        let nfds = match tun_fd > socket_fd {
+            true => tun_fd,
+            false => socket_fd,
+        } + 1;
         unsafe {
             libc::FD_ZERO(&mut fd_set);
             libc::FD_SET(tun_fd, &mut fd_set);
