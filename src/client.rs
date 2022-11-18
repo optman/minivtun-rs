@@ -19,19 +19,20 @@ extern crate libc;
 
 type Result = std::result::Result<(), Box<dyn Error>>;
 
-pub struct Client<T> {
+pub struct Client<'a> {
     config: Config,
     socket: UdpSocket,
     state: State,
     tun: Device,
-    socket_factory: T,
+    socket_factory: &'a dyn Fn(&Config) -> UdpSocket,
 }
 
-impl<T> Client<T>
-where
-    T: Fn(&Config) -> UdpSocket,
-{
-    pub fn new(config: Config, socket_factory: T, tun: Device) -> Self {
+impl<'a> Client<'a> {
+    pub fn new(
+        config: Config,
+        socket_factory: &'a dyn Fn(&Config) -> UdpSocket,
+        tun: Device,
+    ) -> Self {
         let socket = socket_factory(&config);
         Self {
             config: config,
@@ -101,10 +102,7 @@ where
     }
 }
 
-impl<T> poll::Reactor for Client<T>
-where
-    T: Fn(&Config) -> UdpSocket,
-{
+impl<'a> poll::Reactor for Client<'a> {
     fn socket_fd(&self) -> RawFd {
         self.socket.as_raw_fd()
     }

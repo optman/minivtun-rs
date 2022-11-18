@@ -138,7 +138,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             do_daemonize(&config);
 
-            Client::new(config, socket_factory, tun).run()
+            Client::new(config, &socket_factory, tun).run()
         }
     }
 }
