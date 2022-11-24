@@ -21,7 +21,7 @@ pub struct RealAddr {
 impl RealAddr {
     pub fn new(addr: SocketAddr) -> Self {
         Self {
-            addr: addr,
+            addr,
             last_recv: Instant::now(),
             xmit_seq: Wrapping(thread_rng().next_u32() as u16),
         }
@@ -68,8 +68,8 @@ pub struct VirtualAddr {
 impl VirtualAddr {
     pub fn new(va: IpAddr, ra: RefRA) -> Self {
         Self {
-            va: va,
-            ra: ra,
+            va,
+            ra,
             last_recv: Instant::now(),
         }
     }
@@ -88,11 +88,11 @@ impl RouteTable {
     }
 
     pub fn get_va(&self, va: &IpAddr) -> Option<VirtualAddr> {
-        self.va_map.get(va).map(|v| v.clone())
+        self.va_map.get(va).cloned()
     }
 
     pub fn get_ra(&mut self, addr: &SocketAddr) -> Option<RefRA> {
-        self.ra_map.get(addr).map(|v| v.clone())
+        self.ra_map.get(addr).cloned()
     }
 
     pub fn get_or_add_ra(&mut self, addr: &SocketAddr) -> RefRA {
@@ -129,8 +129,8 @@ impl RouteTable {
 
     pub fn get_route(&mut self, va: &IpAddr) -> Option<VirtualAddr> {
         self.va_map
-            .get(&va)
-            .map(|va| va.clone())
+            .get(va)
+            .cloned()
             .or_else(|| self.get_rt_route(va))
     }
 
@@ -176,17 +176,17 @@ impl RouteTable {
         self.va_map.retain(|_, v| {
             if now.duration_since(v.last_recv) > RECYCLE_VA_TIMEOUT {
                 info!("Recycle vip [{:?}] at [{:}]", v.va, v.ra.addr());
-                return false;
+                false
             } else {
-                return true;
+                true
             }
         });
         self.ra_map.retain(|_, v| {
             if now.duration_since(v.last_recv()) > RECYCLE_VA_TIMEOUT {
                 info!("Recycle client [{:?}]", v.addr());
-                return false;
+                false
             } else {
-                return true;
+                true
             }
         });
     }

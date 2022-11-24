@@ -96,7 +96,7 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
     if let Some(routes) = matches.values_of("route") {
         let f = || -> Result<(), Box<dyn std::error::Error>> {
             for r in routes {
-                let mut parts = r.splitn(2, "=");
+                let mut parts = r.splitn(2, '=');
                 let net: IpNet = parts.next().unwrap().parse()?;
                 let gw: Option<IpAddr> = match parts.next() {
                     Some(v) => Some(v.parse()?),

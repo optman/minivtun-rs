@@ -35,13 +35,9 @@ impl<F: Fn(&mut [u8]) -> Result<Cow<'_, [u8]>>> Finalizer for F {
 }
 
 /// Takes care of grouping finalizers through the builder chain.
+///
+#[derive(Default)]
 pub struct Finalization<'a>(Vec<&'a dyn Finalizer>);
-
-impl<'a> Default for Finalization<'a> {
-    fn default() -> Self {
-        Finalization(Default::default())
-    }
-}
 
 impl<'a> fmt::Debug for Finalization<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -80,9 +76,8 @@ impl<'a> Finalization<'a> {
                 Some(ref mut out) => Some(finalizer.finalize(out.to_mut())?),
             };
 
-            match inner_out {
-                Some(Cow::Owned(b)) => out = Some(Cow::Owned(b)),
-                _ => {}
+            if let Some(Cow::Owned(b)) = inner_out {
+                out = Some(Cow::Owned(b));
             }
         }
 
@@ -104,6 +99,7 @@ impl<'a> IntoIterator for Finalization<'a> {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl<'a> Into<Vec<&'a dyn Finalizer>> for Finalization<'a> {
     fn into(self) -> Vec<&'a dyn Finalizer> {
         self.0

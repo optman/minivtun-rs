@@ -44,7 +44,7 @@ impl Builder {
         };
 
         Ok(Self {
-            cipher: cipher,
+            cipher,
             key: secret_to_key(secret),
         })
     }

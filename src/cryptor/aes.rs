@@ -97,16 +97,14 @@ where
         let cipher =
             T::new_from_slices(&self.key[..KEY_SIZE], &IV[..16]).map_err(|_| Error::EncryptFail)?;
 
-        Ok(cipher
-            .encrypt(buffer, pos)
-            .map_err(|_| Error::EncryptFail)?)
+        cipher.encrypt(buffer, pos).map_err(|_| Error::EncryptFail)
     }
 
     fn decrypt<'a>(&self, buffer: &'a mut [u8]) -> Result<&'a [u8], Error> {
         let cipher =
             T::new_from_slices(&self.key[..KEY_SIZE], &IV[..16]).map_err(|_| Error::EncryptFail)?;
 
-        Ok(cipher.decrypt(buffer).map_err(|_| Error::DecryptFail)?)
+        cipher.decrypt(buffer).map_err(|_| Error::DecryptFail)
     }
 
     fn encrypt_vec(&self, buffer: &[u8]) -> Result<Vec<u8>, Error> {
@@ -120,7 +118,7 @@ where
         let cipher =
             T::new_from_slices(&self.key[..KEY_SIZE], &IV[..16]).map_err(|_| Error::EncryptFail)?;
 
-        Ok(cipher.decrypt_vec(buffer).map_err(|_| Error::DecryptFail)?)
+        cipher.decrypt_vec(buffer).map_err(|_| Error::DecryptFail)
     }
 }
 

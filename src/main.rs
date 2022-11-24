@@ -100,7 +100,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let listen_addr = config
         .listen_addr
-        .unwrap_or(default_listen_addr.parse().unwrap());
+        .unwrap_or_else(|| default_listen_addr.parse().unwrap());
 
     let socket_factory = |config: &Config| {
         let socket = UdpSocket::bind(listen_addr).unwrap();

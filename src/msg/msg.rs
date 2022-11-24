@@ -103,7 +103,7 @@ impl<'a, B: Buffer> Builder<'a, B> {
     }
 
     pub fn disconnect(self) -> Result<Self> {
-        Ok(self.op(Op::Disconnect)?)
+        self.op(Op::Disconnect)
     }
 
     pub fn ip_data(self) -> Result<crate::msg::ipdata::Builder<'a, B>> {
@@ -127,7 +127,7 @@ impl<'a, B: Buffer> Builder<'a, B> {
 impl Finalizer for Box<dyn Cryptor> {
     fn finalize<'a>(&self, buffer: &'a mut [u8]) -> Result<Cow<'a, [u8]>> {
         buffer[4..20].copy_from_slice(self.auth_key());
-        Ok(Cow::Owned(self.encrypt_vec(&buffer)?))
+        Ok(Cow::Owned(self.encrypt_vec(buffer)?))
     }
 }
 

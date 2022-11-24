@@ -28,9 +28,9 @@ pub struct Server {
 impl Server {
     pub fn new(config: Config, socket: UdpSocket, tun: Device) -> Self {
         Self {
-            config: config,
-            socket: socket,
-            tun: tun,
+            config,
+            socket,
+            tun,
             state: Default::default(),
             rt: Default::default(),
         }
@@ -76,9 +76,9 @@ impl Server {
             }
         }
 
-        match pkt.as_ref()[0] >> 4 {
+        match pkt[0] >> 4 {
             4 | 6 => {
-                self.tun.write(pkt)?;
+                let _ = self.tun.write(pkt)?;
             }
             _ => {
                 debug!("[FWD]invalid packet!")
@@ -130,6 +130,7 @@ impl poll::Reactor for Server {
         self.socket.as_raw_fd()
     }
     fn tunnel_recv(&mut self) -> Result {
+        #[allow(clippy::uninit_assumed_init)]
         let mut buf: [u8; 1500] = unsafe { mem::MaybeUninit::uninit().assume_init() };
         let size = self.tun.read(&mut buf)?;
         match buf[0] >> 4 {
@@ -152,6 +153,7 @@ impl poll::Reactor for Server {
     }
 
     fn network_recv(&mut self) -> Result {
+        #[allow(clippy::uninit_assumed_init)]
         let mut buf: [u8; 1500] = unsafe { mem::MaybeUninit::uninit().assume_init() };
         let (size, src) = match self.socket.recv_from(&mut buf) {
             Ok((size, src)) => (size, src),
@@ -162,7 +164,7 @@ impl poll::Reactor for Server {
         };
 
         trace!("receive from  {:}, size {:}", src, size);
-        match msg::Packet::<&[u8]>::with_cryptor(&mut &mut buf[..size], &self.config.cryptor) {
+        match msg::Packet::<&[u8]>::with_cryptor(&mut buf[..size], &self.config.cryptor) {
             Ok(msg) => match msg.op() {
                 Ok(Op::IpData) => {
                     self.forward_local(&src, ipdata::Packet::new(msg.payload()?)?.payload()?)?;

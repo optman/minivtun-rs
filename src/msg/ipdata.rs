@@ -61,7 +61,7 @@ impl<'a, B: Buffer> Builder<'a, B> {
         Ok(self)
     }
 
-    pub fn payload<'b>(mut self, value: &[u8]) -> Result<Self> {
+    pub fn payload(mut self, value: &[u8]) -> Result<Self> {
         if self.payload {
             Err(Error::InvalidPacket)?
         }

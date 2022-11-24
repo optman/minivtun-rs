@@ -11,8 +11,8 @@ pub enum Error {
     AddAddrFail,
     AddRouteFail,
     NoRoute(String),
-    IoError(#[from] std::io::Error),
-    PacketError(#[from] packet::Error),
+    Io(#[from] std::io::Error),
+    Packet(#[from] packet::Error),
 }
 
 impl fmt::Display for Error {

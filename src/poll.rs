@@ -14,6 +14,7 @@ pub trait Reactor {
 }
 
 pub fn poll<T: Reactor>(tun_fd: RawFd, mut reactor: T) -> Result {
+    #[allow(clippy::uninit_assumed_init)]
     let mut fd_set: libc::fd_set = unsafe { mem::MaybeUninit::uninit().assume_init() };
 
     loop {
@@ -33,17 +34,18 @@ pub fn poll<T: Reactor>(tun_fd: RawFd, mut reactor: T) -> Result {
             tv_sec: 2,
             tv_usec: 0,
         };
-        match unsafe {
-            libc::select(
-                nfds,
-                &mut fd_set,
-                ptr::null_mut(),
-                ptr::null_mut(),
-                &mut timeout,
-            )
-        } {
-            -1 => Err(io::Error::last_os_error())?,
-            _ => {}
+        if -1
+            == unsafe {
+                libc::select(
+                    nfds,
+                    &mut fd_set,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    &mut timeout,
+                )
+            }
+        {
+            Err(io::Error::last_os_error())?;
         }
 
         reactor.keepalive()?;
