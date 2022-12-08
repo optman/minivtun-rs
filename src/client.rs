@@ -9,7 +9,8 @@ use crate::{
 use log::{debug, info, trace, warn};
 use std::error::Error;
 use std::io::{Read, Write};
-use std::mem;
+
+use std::mem::MaybeUninit;
 use std::net::UdpSocket;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::time::Instant;
@@ -108,8 +109,7 @@ impl<'a> poll::Reactor for Client<'a> {
     }
 
     fn tunnel_recv(&mut self) -> Result {
-        #[allow(clippy::uninit_assumed_init)]
-        let mut buf: [u8; 1500] = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let mut buf = unsafe { MaybeUninit::assume_init(MaybeUninit::<[u8; 1500]>::uninit()) };
         let size = self.tun.read(&mut buf)?;
         match buf[0] >> 4 {
             4 => {
@@ -127,8 +127,7 @@ impl<'a> poll::Reactor for Client<'a> {
     }
 
     fn network_recv(&mut self) -> Result {
-        #[allow(clippy::uninit_assumed_init)]
-        let mut buf: [u8; 1500] = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let mut buf = unsafe { MaybeUninit::assume_init(MaybeUninit::<[u8; 1500]>::uninit()) };
         let (size, src) = match self.socket.recv_from(&mut buf) {
             Ok((size, src)) => (size, src),
             Err(e) => {

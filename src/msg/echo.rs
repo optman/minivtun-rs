@@ -33,13 +33,13 @@ impl<'a, B: Buffer> Build<'a, B> for Builder<'a, B> {
     }
 }
 
-impl<'a> Default for Builder<'a, Dynamic> {
+impl Default for Builder<'_, Dynamic> {
     fn default() -> Self {
         Builder::with(Dynamic::default()).unwrap()
     }
 }
 
-impl<'a, B: Buffer> Builder<'_, B> {
+impl<B: Buffer> Builder<'_, B> {
     pub fn id(mut self, id: u32) -> Result<Self> {
         BigEndian::write_u32(&mut self.buffer.data_mut()[20..], id);
         Ok(self)

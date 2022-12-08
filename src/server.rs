@@ -10,7 +10,7 @@ use crate::{
 use log::{debug, trace, warn};
 use std::error::Error;
 use std::io::{Read, Write};
-use std::mem;
+use std::mem::{self, MaybeUninit};
 use std::net::{SocketAddr, UdpSocket};
 use std::os::unix::io::{AsRawFd, RawFd};
 use tun::platform::Device;
@@ -130,8 +130,8 @@ impl poll::Reactor for Server {
         self.socket.as_raw_fd()
     }
     fn tunnel_recv(&mut self) -> Result {
-        #[allow(clippy::uninit_assumed_init)]
-        let mut buf: [u8; 1500] = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let mut buf =
+            unsafe { mem::MaybeUninit::assume_init(mem::MaybeUninit::<[u8; 1500]>::uninit()) };
         let size = self.tun.read(&mut buf)?;
         match buf[0] >> 4 {
             4 => {
@@ -153,8 +153,7 @@ impl poll::Reactor for Server {
     }
 
     fn network_recv(&mut self) -> Result {
-        #[allow(clippy::uninit_assumed_init)]
-        let mut buf: [u8; 1500] = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let mut buf = unsafe { MaybeUninit::assume_init(MaybeUninit::<[u8; 1500]>::uninit()) };
         let (size, src) = match self.socket.recv_from(&mut buf) {
             Ok((size, src)) => (size, src),
             Err(e) => {

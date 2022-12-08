@@ -7,7 +7,7 @@ use packet::{buffer::Dynamic, Buffer};
 use std::borrow::Cow;
 use std::convert::TryFrom;
 
-#[derive(PartialEq, Debug, TryFromPrimitive)]
+#[derive(PartialEq, Eq, Debug, TryFromPrimitive)]
 #[repr(u8)]
 pub enum Op {
     EchoReq,

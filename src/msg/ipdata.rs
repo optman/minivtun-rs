@@ -5,7 +5,7 @@ use num_enum::TryFromPrimitive;
 use packet::{buffer::Dynamic, Buffer};
 use std::convert::TryFrom;
 
-#[derive(PartialEq, Debug, TryFromPrimitive)]
+#[derive(PartialEq, Eq, Debug, TryFromPrimitive)]
 #[repr(u16)]
 pub enum Kind {
     V4 = 0x0800,

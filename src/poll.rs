@@ -1,6 +1,7 @@
 use std::error::Error;
+use std::mem::MaybeUninit;
 use std::os::unix::io::RawFd;
-use std::{io, mem, ptr};
+use std::{io, ptr};
 
 extern crate libc;
 
@@ -14,8 +15,7 @@ pub trait Reactor {
 }
 
 pub fn poll<T: Reactor>(tun_fd: RawFd, mut reactor: T) -> Result {
-    #[allow(clippy::uninit_assumed_init)]
-    let mut fd_set: libc::fd_set = unsafe { mem::MaybeUninit::uninit().assume_init() };
+    let mut fd_set = unsafe { MaybeUninit::assume_init(MaybeUninit::<libc::fd_set>::uninit()) };
 
     loop {
         let socket_fd = reactor.socket_fd();

@@ -63,7 +63,7 @@ impl<'a> Finalization<'a> {
     }
 
     /// Finalize a buffer.
-    pub fn finalize<'b>(self, buffer: &'b mut [u8]) -> Result<Cow<'b, [u8]>> {
+    pub fn finalize(self, buffer: &mut [u8]) -> Result<Cow<'_, [u8]>> {
         let mut out: Option<Cow<'_, [u8]>> = None;
         for finalizer in self.0.into_iter()
         /*.rev()*/
