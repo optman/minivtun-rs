@@ -1,33 +1,18 @@
 #![allow(dead_code)]
 
 use daemonize::Daemonize;
+use ipnet::IpNet;
 use log::{debug, info};
 use nix::sys::socket::{setsockopt, sockopt};
-use std::error::Error;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::os::unix::io::AsRawFd;
-use std::panic;
-use std::thread;
+use std::{panic, process::Command, thread};
 use tun::Device;
 
-mod client;
-mod config;
-mod cryptor;
-mod error;
 mod flags;
-mod msg;
-mod poll;
-mod route;
-mod server;
-mod state;
-mod util;
-use client::Client;
-use config::Config;
-use server::Server;
+use minivtun::{Client, Config, Error, Server};
 
-extern crate tun;
-
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init_from_env(
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
@@ -57,25 +42,25 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     if let Some(addr4) = config.loc_tun_in {
         debug!("add address {}", addr4);
-        util::add_addr(addr4.into(), tun.name())?;
+        add_addr(addr4.into(), tun.name())?;
     };
 
     if let Some(addr6) = config.loc_tun_in6 {
         debug!("add address {}", addr6);
-        util::add_addr(addr6.into(), tun.name())?;
+        add_addr(addr6.into(), tun.name())?;
     };
 
     for (net, _) in &config.routes {
         debug!("add route {}", net);
-        util::add_route(net, tun.name(), &config.table, &config.metric)?;
+        add_route(net, tun.name(), &config.table, &config.metric)?;
     }
 
     //create socket
     let server_addr: Option<SocketAddr> = match config.server_addr {
         Some(ref server_addr) => loop {
-            let addrs = server_addr.to_socket_addrs().map_err(|_| {
-                crate::error::Error::InvalidArg(format!("invalid remote addr {:?}", server_addr))
-            });
+            let addrs = server_addr
+                .to_socket_addrs()
+                .map_err(|_| Error::InvalidArg(format!("invalid remote addr {:?}", server_addr)));
 
             match addrs {
                 Ok(mut addrs) => break addrs.next(),
@@ -147,4 +132,59 @@ fn do_daemonize(config: &Config) {
     if let Some(true) = config.daemonize {
         Daemonize::new().user("nobody").start().unwrap();
     }
+}
+
+fn add_addr(addr: IpNet, dev: &str) -> Result<(), Error> {
+    let mut c = Command::new("ip");
+    if let IpNet::V6(_) = addr {
+        c.arg("-6");
+    };
+
+    if !c
+        .arg("addr")
+        .arg("add")
+        .arg(addr.to_string())
+        .arg("dev")
+        .arg(dev)
+        .status()
+        .map_or(false, |c| c.success())
+    {
+        Err(Error::AddAddrFail)?
+    }
+
+    Ok(())
+}
+
+fn add_route(
+    addr: &IpNet,
+    dev: &str,
+    table: &Option<String>,
+    metric: &Option<String>,
+) -> Result<(), Error> {
+    let mut c = Command::new("ip");
+    if let IpNet::V6(_) = addr {
+        c.arg("-6");
+    };
+
+    c.arg("route")
+        .arg("add")
+        .arg(addr.to_string())
+        .arg("dev")
+        .arg(dev);
+
+    if let Some(table) = table {
+        c.arg("table");
+        c.arg(table);
+    }
+
+    if let Some(metric) = metric {
+        c.arg("metric");
+        c.arg(metric);
+    }
+
+    if c.status().map_or(false, |c| c.success()) {
+        return Ok(());
+    }
+
+    Err(Error::AddRouteFail)?
 }

@@ -5,7 +5,7 @@ version = 3
 [[package]]
 name = "aes"
 version = "0.7.5"
-source = "git+https://github.com/RustCrypto/block-ciphers#859ca00b5aa525801f6a7aae678a61c2bd394ab1"
+source = "git+https://github.com/RustCrypto/block-ciphers?tag=aes-v0.7.5#e2383fe7a7afb43fb5511130ab6d3b57baa7062d"
 dependencies = [
  "cfg-if",
  "cipher",
@@ -66,7 +66,7 @@ dependencies = [
 [[package]]
 name = "block-modes"
 version = "0.8.1"
-source = "git+https://github.com/RustCrypto/block-ciphers#859ca00b5aa525801f6a7aae678a61c2bd394ab1"
+source = "git+https://github.com/RustCrypto/block-ciphers?tag=aes-v0.7.5#e2383fe7a7afb43fb5511130ab6d3b57baa7062d"
 dependencies = [
  "block-padding",
  "cipher",
@@ -248,7 +248,7 @@ dependencies = [
 [[package]]
 name = "md-5"
 version = "0.9.1"
-source = "git+https://github.com/RustCrypto/hashes#a7431da030b14ff144a30638c7cd3604befc1512"
+source = "git+https://github.com/RustCrypto/hashes?tag=md5-v0.9.1#22f903a754ff4b846101869bc151d3879d7e77d3"
 dependencies = [
  "block-buffer",
  "digest",

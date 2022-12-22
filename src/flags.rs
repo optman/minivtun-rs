@@ -1,12 +1,8 @@
-use crate::config::Config;
-use crate::cryptor;
-use crate::error::Error;
 use clap::{App, Arg};
 use ipnet::IpNet;
 use log::warn;
-use std::net::IpAddr;
-use std::result::Result;
-use std::time::Duration;
+use minivtun::{cryptor, Config, Error};
+use std::{net::IpAddr, result::Result, time::Duration};
 
 const DEFAULT_CIPHER: &str = "aes-128";
 const DEFAULT_MTU: i32 = 1300;

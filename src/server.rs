@@ -20,7 +20,7 @@ type Result = std::result::Result<(), Box<dyn Error>>;
 pub struct Server {
     config: Config,
     socket: UdpSocket,
-    state: State,
+    _state: State,
     tun: Device,
     rt: RouteTable,
 }
@@ -31,7 +31,7 @@ impl Server {
             config,
             socket,
             tun,
-            state: Default::default(),
+            _state: Default::default(),
             rt: Default::default(),
         }
     }

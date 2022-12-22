@@ -7,19 +7,26 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tun="*"
-packet="*"
-libc="*"
-byteorder="*"
-thiserror="*"
-num_enum="*"
-ipnet="*"
+tun="0.5.3"
+packet="0.1.4"
+libc="0.2.101"
+byteorder="1.4.3"
+thiserror="1.0.29"
+num_enum="0.5.4"
+ipnet="2.3.1"
 clap="2.33"
-rand="*"
-log="*"
-env_logger="*"
-daemonize="*"
-aes={git="https://github.com/RustCrypto/block-ciphers"}
-block-modes={git="https://github.com/RustCrypto/block-ciphers"}
-md-5={git="https://github.com/RustCrypto/hashes"}
-nix="*"
+rand="0.4.6"
+log="0.4.14"
+env_logger="0.9.0"
+daemonize="0.4.1"
+aes={ tag = "aes-v0.7.5", git="https://github.com/RustCrypto/block-ciphers"}
+block-modes={ tag = "aes-v0.7.5",  git="https://github.com/RustCrypto/block-ciphers"}
+md-5={ tag = "md5-v0.9.1", git="https://github.com/RustCrypto/hashes"}
+nix="0.22.0"
+
+[lib]
+name = "minivtun"
+#crate-type = ["cdylib"]
+
+[[bin]]
+name = "minivtun-rs"
