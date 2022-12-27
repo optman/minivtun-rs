@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(1);
     }));
 
-    let mut config = Config::default();
+    let mut config = Config::new();
     flags::parse(&mut config)?;
 
     //create tun
@@ -31,9 +31,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(ref name) = config.ifname {
         tun_config.name(name);
     }
-    if let Some(mtu) = config.mtu {
-        tun_config.mtu(mtu);
-    }
+
+    tun_config.mtu(config.mtu);
 
     tun_config.up();
 
@@ -55,6 +54,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         add_route(net, tun.name(), &config.table, &config.metric)?;
     }
 
+    config.with_tun_fd(tun.as_raw_fd());
+
     //create socket
     let server_addr: Option<SocketAddr> = match config.server_addr {
         Some(ref server_addr) => loop {
@@ -66,7 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(mut addrs) => break addrs.next(),
                 Err(err) => {
                     if config.wait_dns {
-                        thread::sleep(config.reconnect_timeout.unwrap());
+                        thread::sleep(config.reconnect_timeout);
                         continue;
                     } else {
                         return Err(Box::new(err));
@@ -100,6 +101,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         socket
     };
 
+    config.with_socket_factory(&socket_factory);
+
     //run
     match config.server_addr {
         None => {
@@ -110,9 +113,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tun.name()
             );
 
+            config.with_socket(socket);
+
             do_daemonize(&config);
 
-            Server::new(config, socket, tun).run()
+            Server::new(config).run()
         }
         _ => {
             info!(
@@ -123,13 +128,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             do_daemonize(&config);
 
-            Client::new(config, &socket_factory, tun).run()
+            Client::new(config).run()
         }
     }
 }
 
 fn do_daemonize(config: &Config) {
-    if let Some(true) = config.daemonize {
+    if config.daemonize {
         Daemonize::new().user("nobody").start().unwrap();
     }
 }

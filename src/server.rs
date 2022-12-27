@@ -13,20 +13,25 @@ use std::io::{Read, Write};
 use std::mem::{self, MaybeUninit};
 use std::net::{SocketAddr, UdpSocket};
 use std::os::unix::io::{AsRawFd, RawFd};
-use tun::platform::Device;
+use tun::platform::posix::Fd;
 
 type Result = std::result::Result<(), Box<dyn Error>>;
 
-pub struct Server {
-    config: Config,
+pub struct Server<'a> {
+    config: Config<'a>,
     socket: UdpSocket,
     _state: State,
-    tun: Device,
+    tun: Fd,
     rt: RouteTable,
 }
 
-impl Server {
-    pub fn new(config: Config, socket: UdpSocket, tun: Device) -> Self {
+impl<'a> Server<'a> {
+    pub fn new(mut config: Config<'a>) -> Self {
+        let tun = Fd::new(config.tun_fd).unwrap();
+        let socket = config
+            .socket
+            .take()
+            .unwrap_or_else(|| config.socket_factory.as_ref().unwrap()(&config));
         Self {
             config,
             socket,
@@ -125,7 +130,7 @@ impl Server {
     }
 }
 
-impl poll::Reactor for Server {
+impl<'a> poll::Reactor for Server<'a> {
     fn socket_fd(&self) -> RawFd {
         self.socket.as_raw_fd()
     }

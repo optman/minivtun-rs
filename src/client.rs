@@ -14,33 +14,31 @@ use std::mem::MaybeUninit;
 use std::net::UdpSocket;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::time::Instant;
-use tun::platform::Device;
+use tun::platform::posix::Fd;
 
 extern crate libc;
 
 type Result = std::result::Result<(), Box<dyn Error>>;
 
 pub struct Client<'a> {
-    config: Config,
+    config: Config<'a>,
     socket: UdpSocket,
     state: State,
-    tun: Device,
-    socket_factory: &'a dyn Fn(&Config) -> UdpSocket,
+    tun: Fd,
 }
 
 impl<'a> Client<'a> {
-    pub fn new(
-        config: Config,
-        socket_factory: &'a dyn Fn(&Config) -> UdpSocket,
-        tun: Device,
-    ) -> Self {
-        let socket = socket_factory(&config);
+    pub fn new(mut config: Config<'a>) -> Self {
+        let socket = config
+            .socket
+            .take()
+            .unwrap_or_else(|| config.socket_factory.as_ref().unwrap()(&config));
+        let tun = Fd::new(config.tun_fd).unwrap();
         Self {
             config,
             socket,
             tun,
             state: Default::default(),
-            socket_factory,
         }
     }
 
@@ -163,19 +161,19 @@ impl<'a> poll::Reactor for Client<'a> {
 
     fn keepalive(&mut self) -> Result {
         let ack_timeout = self.state.last_ack.map_or(true, |last_ack| {
-            Instant::now().duration_since(last_ack) > self.config.reconnect_timeout.unwrap()
+            Instant::now().duration_since(last_ack) > self.config.reconnect_timeout
         });
 
         if ack_timeout {
             let reconnect = self.state.last_connect.map_or(true, |last_connect| {
-                Instant::now().duration_since(last_connect) > self.config.reconnect_timeout.unwrap()
+                Instant::now().duration_since(last_connect) > self.config.reconnect_timeout
             });
 
             if reconnect {
                 info!("Reconnect...");
 
-                if self.config.rebind {
-                    self.socket = (self.socket_factory)(&self.config);
+                if self.config.rebind && self.config.socket_factory.is_some() {
+                    self.socket = self.config.socket_factory.unwrap()(&self.config);
                     debug!("rebind to {:}", self.socket.local_addr().unwrap());
                 }
 
@@ -189,8 +187,7 @@ impl<'a> poll::Reactor for Client<'a> {
 
         match self.state.last_echo {
             Some(last_echo)
-                if Instant::now().duration_since(last_echo)
-                    < self.config.keepalive_interval.unwrap() => {}
+                if Instant::now().duration_since(last_echo) < self.config.keepalive_interval => {}
             _ => {
                 self.state.last_echo = Some(Instant::now());
                 self.send_echo()?;

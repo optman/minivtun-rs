@@ -5,14 +5,11 @@ use minivtun::{cryptor, Config, Error};
 use std::{net::IpAddr, result::Result, time::Duration};
 
 const DEFAULT_CIPHER: &str = "aes-128";
-const DEFAULT_MTU: i32 = 1300;
-const DEFAULT_RECONNECT_TIMEOUT: i32 = 47;
-const DEFAULT_KEEPALIVE_INTERVAL: i32 = 7;
 
 pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
-    let default_mtu = DEFAULT_MTU.to_string();
-    let default_reconnect_timeo = DEFAULT_RECONNECT_TIMEOUT.to_string();
-    let default_keepalive_interval = DEFAULT_KEEPALIVE_INTERVAL.to_string();
+    let default_mtu = config.mtu.to_string();
+    let default_reconnect_timeo = config.reconnect_timeout.as_secs().to_string();
+    let default_keepalive_interval = config.keepalive_interval.as_secs().to_string();
 
     let matches = App::new("minivtun-rs")
         .version(env!("CARGO_PKG_VERSION"))
@@ -38,37 +35,32 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         .get_matches();
 
     if let Some(local) = matches.value_of("local") {
-        config.listen_addr = Some(
-            local
-                .parse()
-                .map_err(|_| Error::InvalidArg("invalid listen address".into()))?,
-        );
+        config.listen_addr = local
+            .parse()
+            .map(Some)
+            .map_err(|_| Error::InvalidArg("invalid listen address".into()))?;
     }
 
     config.server_addr = matches.value_of("remote").map(Into::into);
 
     config.ifname = matches.value_of("ifname").or(Some("mv%d")).map(Into::into);
-    config.mtu = match matches.value_of("mtu") {
-        Some(v) => Some(
-            v.parse()
-                .map_err(|_| Error::InvalidArg("invalid mtu".into()))?,
-        ),
-        _ => Some(DEFAULT_MTU),
+    if let Some(v) = matches.value_of("mtu") {
+        config.mtu = v
+            .parse()
+            .map_err(|_| Error::InvalidArg("invalid mtu".into()))?;
     };
 
     if let Some(addr4) = matches.value_of("ipv4-addr") {
-        config.loc_tun_in = Some(
-            addr4
-                .parse()
-                .map_err(|_| Error::InvalidArg("invalid local ipv4 address".into()))?,
-        );
+        config.loc_tun_in = addr4
+            .parse()
+            .map(Some)
+            .map_err(|_| Error::InvalidArg("invalid local ipv4 address".into()))?;
     }
     if let Some(addr6) = matches.value_of("ipv6-addr") {
-        config.loc_tun_in6 = Some(
-            addr6
-                .parse()
-                .map_err(|_| Error::InvalidArg("invalid local ipv6 address".into()))?,
-        );
+        config.loc_tun_in6 = addr6
+            .parse()
+            .map(Some)
+            .map_err(|_| Error::InvalidArg("invalid local ipv6 address".into()))?;
     }
 
     match (
@@ -85,15 +77,16 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         }
     }
 
-    if matches.is_present("daemon") {
-        config.daemonize = Some(true);
-    }
+    config.daemonize = matches.is_present("daemon");
 
     if let Some(routes) = matches.values_of("route") {
         let f = || -> Result<(), Box<dyn std::error::Error>> {
             for r in routes {
                 let mut parts = r.splitn(2, '=');
-                let net: IpNet = parts.next().unwrap().parse()?;
+                let net: IpNet = match parts.next() {
+                    Some(v) => v.parse()?,
+                    None => continue,
+                };
                 let gw: Option<IpAddr> = match parts.next() {
                     Some(v) => Some(v.parse()?),
                     None => None,
@@ -108,40 +101,33 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         f().map_err(|_| Error::InvalidArg("invalid route".into()))?
     }
 
-    config.keepalive_interval = match matches.value_of("keepalive") {
-        Some(v) => Some(Duration::from_secs(
-            v.parse()
-                .map_err(|_| Error::InvalidArg("keepalive".into()))?,
-        )),
-        _ => Some(Duration::from_secs(DEFAULT_KEEPALIVE_INTERVAL as u64)),
+    if let Some(v) = matches.value_of("keepalive") {
+        config.keepalive_interval = v
+            .parse()
+            .map(Duration::from_secs)
+            .map_err(|_| Error::InvalidArg("keepalive".into()))?;
     };
 
-    config.reconnect_timeout = match matches.value_of("reconnect-timeo") {
-        Some(v) => Some(Duration::from_secs(
-            v.parse()
-                .map_err(|_| Error::InvalidArg("reconnect-timeo".into()))?,
-        )),
-        _ => Some(Duration::from_secs(DEFAULT_RECONNECT_TIMEOUT as u64)),
-    };
+    if let Some(v) = matches.value_of("reconnect-timeo") {
+        config.reconnect_timeout = v
+            .parse()
+            .map(Duration::from_secs)
+            .map_err(|_| Error::InvalidArg("reconnect-timeo".into()))?;
+    }
 
     config.table = matches.value_of("table").map(Into::into);
     config.metric = matches.value_of("metric").map(Into::into);
 
     if let Some(fwmark) = matches.value_of("fwmark") {
-        config.fwmark = Some(
-            fwmark
-                .parse()
-                .map_err(|_| Error::InvalidArg("invalid fwmark".into()))?,
-        );
+        config.fwmark = fwmark
+            .parse()
+            .map(Some)
+            .map_err(|_| Error::InvalidArg("invalid fwmark".into()))?;
     };
 
-    if matches.is_present("wait-dns") {
-        config.wait_dns = true;
-    }
+    config.wait_dns = matches.is_present("wait-dns");
 
-    if matches.is_present("rebind") {
-        config.rebind = true;
-    }
+    config.rebind = matches.is_present("rebind");
 
     Ok(())
 }
