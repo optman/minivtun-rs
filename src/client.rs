@@ -160,37 +160,42 @@ impl<'a> poll::Reactor for Client<'a> {
     }
 
     fn keepalive(&mut self) -> Result {
-        let ack_timeout = self.state.last_ack.map_or(true, |last_ack| {
-            Instant::now().duration_since(last_ack) > self.config.reconnect_timeout
-        });
-
-        if ack_timeout {
-            let reconnect = self.state.last_connect.map_or(true, |last_connect| {
-                Instant::now().duration_since(last_connect) > self.config.reconnect_timeout
+        if !self.config.reconnect_timeout.is_zero() {
+            let ack_timeout = self.state.last_ack.map_or(true, |last_ack| {
+                Instant::now().duration_since(last_ack) > self.config.reconnect_timeout
             });
 
-            if reconnect {
-                info!("Reconnect...");
+            if ack_timeout {
+                let reconnect = self.state.last_connect.map_or(true, |last_connect| {
+                    Instant::now().duration_since(last_connect) > self.config.reconnect_timeout
+                });
 
-                if self.config.rebind && self.config.socket_factory.is_some() {
-                    self.socket = self.config.socket_factory.unwrap()(&self.config);
-                    debug!("rebind to {:}", self.socket.local_addr().unwrap());
+                if reconnect {
+                    info!("Reconnect...");
+
+                    if self.config.rebind && self.config.socket_factory.is_some() {
+                        self.socket = self.config.socket_factory.unwrap()(&self.config);
+                        debug!("rebind to {:}", self.socket.local_addr().unwrap());
+                    }
+
+                    self.state.last_connect = Some(Instant::now());
+                    let _ = self
+                        .socket
+                        .connect(self.config.server_addr.as_ref().unwrap())
+                        .map_err(|e| debug!("{:?}", e));
                 }
+            };
+        }
 
-                self.state.last_connect = Some(Instant::now());
-                let _ = self
-                    .socket
-                    .connect(self.config.server_addr.as_ref().unwrap())
-                    .map_err(|e| debug!("{:?}", e));
-            }
-        };
-
-        match self.state.last_echo {
-            Some(last_echo)
-                if Instant::now().duration_since(last_echo) < self.config.keepalive_interval => {}
-            _ => {
-                self.state.last_echo = Some(Instant::now());
-                self.send_echo()?;
+        if !self.config.keepalive_interval.is_zero() {
+            match self.state.last_echo {
+                Some(last_echo)
+                    if Instant::now().duration_since(last_echo)
+                        < self.config.keepalive_interval => {}
+                _ => {
+                    self.state.last_echo = Some(Instant::now());
+                    self.send_echo()?;
+                }
             }
         }
 
