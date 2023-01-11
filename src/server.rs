@@ -1,44 +1,51 @@
 use crate::util::{dest_ip, source_ip};
 use crate::{
     config::Config,
+    error::Error,
     msg,
     msg::{builder::Builder, ipdata, ipdata::Kind, Op},
     poll,
     route::RouteTable,
+    socket::Socket,
     state::State,
 };
-use log::{debug, trace, warn};
-use std::error::Error;
+use log::{debug, info, trace, warn};
 use std::io::{Read, Write};
 use std::mem::{self, MaybeUninit};
-use std::net::{SocketAddr, UdpSocket};
+use std::net::SocketAddr;
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::time::Instant;
 use tun::platform::posix::Fd;
 
-type Result = std::result::Result<(), Box<dyn Error>>;
+type Result = std::result::Result<(), Box<dyn std::error::Error>>;
 
 pub struct Server<'a> {
     config: Config<'a>,
-    socket: UdpSocket,
+    socket: Socket,
     _state: State,
     tun: Fd,
     rt: RouteTable,
+    last_rebind: Option<Instant>,
 }
 
 impl<'a> Server<'a> {
-    pub fn new(mut config: Config<'a>) -> Self {
+    pub fn new(mut config: Config<'a>) -> std::result::Result<Self, Error> {
+        let socket = match config.socket.take() {
+            Some(socket) => socket,
+            None => config
+                .socket_factory
+                .as_ref()
+                .expect("neither socket nor socket_factory is set")(&config)?,
+        };
         let tun = Fd::new(config.tun_fd).unwrap();
-        let socket = config
-            .socket
-            .take()
-            .unwrap_or_else(|| config.socket_factory.as_ref().unwrap()(&config));
-        Self {
+        Ok(Self {
             config,
             socket,
             tun,
             _state: Default::default(),
             rt: Default::default(),
-        }
+            last_rebind: None,
+        })
     }
 
     pub fn run(mut self) -> Result {
@@ -191,6 +198,36 @@ impl<'a> poll::Reactor for Server<'a> {
     }
 
     fn keepalive(&mut self) -> Result {
+        let Config {
+            rebind,
+            reconnect_timeout,
+            socket_factory,
+            ..
+        } = self.config;
+
+        if rebind
+            && self.socket.is_stale()
+            && self
+                .last_rebind
+                .map(|l| l.elapsed() > reconnect_timeout)
+                .unwrap_or(true)
+        {
+            info!("Rebind...");
+
+            self.last_rebind = Some(Instant::now());
+            if let Some(factory) = socket_factory {
+                match factory(&self.config) {
+                    Ok(socket) => {
+                        debug!("rebind to {:}", socket.local_addr().unwrap());
+                        self.socket = socket;
+                    }
+                    Err(e) => {
+                        warn!("rebind fail.{:} ", e);
+                    }
+                }
+            }
+        }
+
         self.rt.prune();
         Ok(())
     }

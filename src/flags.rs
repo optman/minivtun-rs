@@ -1,6 +1,8 @@
 use clap::{App, Arg};
 use ipnet::IpNet;
 use log::warn;
+#[cfg(feature = "holepunch")]
+use minivtun::RndzConfig;
 use minivtun::{cryptor, Config, Error};
 use std::{net::IpAddr, result::Result, time::Duration};
 
@@ -11,7 +13,7 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
     let default_reconnect_timeo = config.reconnect_timeout.as_secs().to_string();
     let default_keepalive_interval = config.keepalive_interval.as_secs().to_string();
 
-    let matches = App::new("minivtun-rs")
+    let app = App::new("minivtun-rs")
         .version(env!("CARGO_PKG_VERSION"))
         .about("Mini virtual tunneller in non-standard protocol")
         .arg(Arg::from_usage("-l, --local [ip:port] 'local IP:port for server to listen'"))
@@ -32,7 +34,21 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         .arg(Arg::from_usage("-F, --fwmark [fwmark_num]           'fwmark set on vpn traffic'"))
         .arg(Arg::from_usage("-w, --wait-dns                      'wait for DNS resolve ready after service started'"))
         .arg(Arg::from_usage("    --rebind                        'rebind socket before reconnect"))
-        .get_matches();
+        ;
+    #[cfg(feature = "holepunch")]
+    let app = {
+        app.arg(Arg::from_usage(
+            "--rndz-server [rndz_server]         'rndz server address'",
+        ))
+        .arg(Arg::from_usage(
+            "--rndz-local-id [rndz_local_id]     'rndz local id'",
+        ))
+        .arg(Arg::from_usage(
+            "--rndz-remote-id [rndz_remote_id]   'rndz remote id'",
+        ))
+    };
+
+    let matches = app.get_matches();
 
     if let Some(local) = matches.value_of("local") {
         config.listen_addr = local
@@ -42,6 +58,16 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
     }
 
     config.server_addr = matches.value_of("remote").map(Into::into);
+
+    #[cfg(feature = "holepunch")]
+    if matches.is_present("rndz-server") {
+        config.rndz = Some(RndzConfig {
+            server: matches.value_of("rndz-server").map(Into::into),
+            local_id: matches.value_of("rndz-local-id").map(Into::into),
+            remote_id: matches.value_of("rndz-remote-id").map(Into::into),
+            ..Default::default()
+        });
+    }
 
     config.ifname = matches.value_of("ifname").or(Some("mv%d")).map(Into::into);
     if let Some(v) = matches.value_of("mtu") {

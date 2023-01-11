@@ -2,53 +2,53 @@ use crate::config::Config;
 use crate::msg;
 use crate::poll;
 use crate::{
+    error::Error,
     msg::Op,
     msg::{builder::Builder, ipdata, ipdata::Kind},
+    socket::Socket,
     state::State,
 };
 use log::{debug, info, trace, warn};
-use std::error::Error;
 use std::io::{Read, Write};
 
 use std::mem::MaybeUninit;
-use std::net::UdpSocket;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::time::Instant;
 use tun::platform::posix::Fd;
 
 extern crate libc;
 
-type Result = std::result::Result<(), Box<dyn Error>>;
+type Result = std::result::Result<(), Box<dyn std::error::Error>>;
 
 pub struct Client<'a> {
     config: Config<'a>,
-    socket: UdpSocket,
+    socket: Socket,
     state: State,
     tun: Fd,
 }
 
 impl<'a> Client<'a> {
-    pub fn new(mut config: Config<'a>) -> Self {
-        let socket = config
-            .socket
-            .take()
-            .unwrap_or_else(|| config.socket_factory.as_ref().unwrap()(&config));
+    pub fn new(mut config: Config<'a>) -> std::result::Result<Self, Error> {
+        let socket = match config.socket.take() {
+            Some(socket) => socket,
+            None => config
+                .socket_factory
+                .as_ref()
+                .expect("neither socket nor socket_factory is set")(&config)?,
+        };
         let tun = Fd::new(config.tun_fd).unwrap();
-        Self {
+        Ok(Self {
             config,
             socket,
             tun,
             state: Default::default(),
-        }
+        })
     }
 
     pub fn run(mut self) -> Result {
-        let _ = self.socket.connect(
-            self.config
-                .server_addr
-                .as_ref()
-                .ok_or("server_addr not set")?,
-        );
+        if let Some(ref server_addr) = self.config.server_addr {
+            let _ = self.socket.connect(server_addr);
+        }
         self.state.last_connect = Some(Instant::now());
 
         poll::poll(self.tun.as_raw_fd(), self)
@@ -173,16 +173,25 @@ impl<'a> poll::Reactor for Client<'a> {
                 if reconnect {
                     info!("Reconnect...");
 
-                    if self.config.rebind && self.config.socket_factory.is_some() {
-                        self.socket = self.config.socket_factory.unwrap()(&self.config);
-                        debug!("rebind to {:}", self.socket.local_addr().unwrap());
+                    if self.config.rebind {
+                        if let Some(ref factory) = self.config.socket_factory {
+                            match factory(&self.config) {
+                                Ok(socket) => {
+                                    debug!("rebind to {:}", socket.local_addr().unwrap());
+                                    self.socket = socket
+                                }
+                                Err(e) => warn!("rebind fail, {:}", e),
+                            }
+                        }
                     }
 
                     self.state.last_connect = Some(Instant::now());
-                    let _ = self
-                        .socket
-                        .connect(self.config.server_addr.as_ref().unwrap())
-                        .map_err(|e| debug!("{:?}", e));
+                    if let Some(ref server_addr) = self.config.server_addr {
+                        let _ = self
+                            .socket
+                            .connect(server_addr)
+                            .map_err(|e| warn!("{:?}", e));
+                    }
                 }
             };
         }
