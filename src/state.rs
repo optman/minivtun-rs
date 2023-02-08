@@ -6,6 +6,8 @@ pub struct State {
     pub last_connect: Option<time::Instant>,
     pub last_echo: Option<time::Instant>,
     pub xmit_seq: u16,
+    pub rx_bytes: u64,
+    pub tx_bytes: u64,
 }
 
 impl Default for State {
@@ -15,6 +17,8 @@ impl Default for State {
             last_connect: None,
             last_echo: None,
             xmit_seq: thread_rng().next_u32() as u16,
+            rx_bytes: 0,
+            tx_bytes: 0,
         }
     }
 }

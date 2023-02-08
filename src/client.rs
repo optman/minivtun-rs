@@ -121,6 +121,8 @@ impl<'a> poll::Reactor for Client<'a> {
             }
         }
 
+        self.state.tx_bytes += size as u64;
+
         Ok(())
     }
 
@@ -155,6 +157,8 @@ impl<'a> poll::Reactor for Client<'a> {
                 trace!("invalid packet")
             }
         }
+
+        self.state.rx_bytes += size as u64;
 
         Ok(())
     }
