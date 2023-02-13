@@ -7,22 +7,32 @@ use crate::{
     poll,
     route::RouteTable,
     socket::Socket,
-    state::State,
 };
 use log::{debug, info, trace, warn};
+use size::Size;
+use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::io::{Read, Write};
 use std::mem::{self, MaybeUninit};
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
+use std::os::unix::io::FromRawFd;
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::os::unix::net::UnixStream;
 use std::time::Instant;
 use tun::platform::posix::Fd;
 
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
 
+#[derive(Default)]
+pub struct Stat {
+    rx_bytes: u64,
+    tx_bytes: u64,
+}
+
 pub struct Server<'a> {
     config: Config<'a>,
     socket: Socket,
-    _state: State,
+    stats: HashMap<IpAddr, Stat>,
     tun: Fd,
     rt: RouteTable,
     last_rebind: Option<Instant>,
@@ -42,7 +52,7 @@ impl<'a> Server<'a> {
             config,
             socket,
             tun,
-            _state: Default::default(),
+            stats: Default::default(),
             rt: Default::default(),
             last_rebind: None,
         })
@@ -56,7 +66,7 @@ impl<'a> Server<'a> {
             }
         }
 
-        poll::poll(self.tun.as_raw_fd(), self)
+        poll::poll(self.tun.as_raw_fd(), self.config.control_fd, self)
     }
 
     fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result {
@@ -65,6 +75,9 @@ impl<'a> Server<'a> {
             Some(va) => va,
             None => Err(crate::error::Error::NoRoute(dst.to_string()))?,
         };
+
+        let mut stat = self.stats.entry(dst).or_default();
+        stat.tx_bytes += pkt.len() as u64;
 
         let buf = msg::Builder::default()
             .cryptor(&self.config.cryptor)?
@@ -87,6 +100,9 @@ impl<'a> Server<'a> {
                 return Ok(());
             }
         }
+
+        let mut stat = self.stats.entry(src).or_default();
+        stat.rx_bytes += pkt.len() as u64;
 
         match pkt[0] >> 4 {
             4 | 6 => {
@@ -132,6 +148,34 @@ impl<'a> Server<'a> {
         let buf = builder.build()?;
 
         let _ = self.socket.send_to(&buf, src);
+
+        Ok(())
+    }
+}
+impl<'a> Display for Server<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        writeln!(f, "server")?;
+        writeln!(f, "listen: {:}", self.socket.local_addr().unwrap())?;
+        if let Some(ipv4) = self.config.loc_tun_in {
+            writeln!(f, "ipv4: {:}", ipv4)?;
+        }
+        if let Some(ipv6) = self.config.loc_tun_in6 {
+            writeln!(f, "ipv6: {:}", ipv6)?;
+        }
+        writeln!(f, "{:}", self.rt)?;
+
+        writeln!(f, "stats:")?;
+        let mut stat = self.stats.iter().collect::<Vec<_>>();
+        stat.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
+        for s in stat {
+            writeln!(
+                f,
+                "{:} rx_bytes: {:} tx_bytes: {:}",
+                s.0,
+                Size::from_bytes(s.1.rx_bytes),
+                Size::from_bytes(s.1.tx_bytes)
+            )?;
+        }
 
         Ok(())
     }
@@ -230,5 +274,10 @@ impl<'a> poll::Reactor for Server<'a> {
 
         self.rt.prune();
         Ok(())
+    }
+
+    fn handle_control_connection(&mut self, fd: RawFd) {
+        let mut us = unsafe { UnixStream::from_raw_fd(fd) };
+        let _ = us.write(self.to_string().as_bytes());
     }
 }

@@ -51,7 +51,7 @@ impl<'a> Client<'a> {
         }
         self.state.last_connect = Some(Instant::now());
 
-        poll::poll(self.tun.as_raw_fd(), self)
+        poll::poll(self.tun.as_raw_fd(), self.config.control_fd, self)
     }
 
     fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result {

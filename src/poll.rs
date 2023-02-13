@@ -1,7 +1,8 @@
 use std::error::Error;
+use std::mem;
 use std::mem::MaybeUninit;
 use std::os::unix::io::RawFd;
-use std::{io, ptr};
+use std::{cmp::max, io, ptr};
 
 extern crate libc;
 
@@ -12,22 +13,25 @@ pub trait Reactor {
     fn keepalive(&mut self) -> Result;
     fn tunnel_recv(&mut self) -> Result;
     fn network_recv(&mut self) -> Result;
+    fn handle_control_connection(&mut self, _fd: RawFd) {}
 }
 
-pub fn poll<T: Reactor>(tun_fd: RawFd, mut reactor: T) -> Result {
+pub fn poll<T: Reactor>(tun_fd: RawFd, control_fd: Option<RawFd>, mut reactor: T) -> Result {
     let mut fd_set = unsafe { MaybeUninit::assume_init(MaybeUninit::<libc::fd_set>::uninit()) };
 
     loop {
         let socket_fd = reactor.socket_fd();
+        let control_fd = control_fd.unwrap_or(0);
 
-        let nfds = match tun_fd > socket_fd {
-            true => tun_fd,
-            false => socket_fd,
-        } + 1;
+        let nfds = max(max(tun_fd, socket_fd), control_fd) + 1;
+
         unsafe {
             libc::FD_ZERO(&mut fd_set);
             libc::FD_SET(tun_fd, &mut fd_set);
             libc::FD_SET(socket_fd, &mut fd_set);
+            if control_fd != 0 {
+                libc::FD_SET(control_fd, &mut fd_set);
+            }
         }
 
         let mut timeout = libc::timeval {
@@ -56,6 +60,16 @@ pub fn poll<T: Reactor>(tun_fd: RawFd, mut reactor: T) -> Result {
 
         if unsafe { libc::FD_ISSET(socket_fd, &fd_set) } {
             reactor.network_recv()?
+        }
+
+        if control_fd != 0 && unsafe { libc::FD_ISSET(control_fd, &fd_set) } {
+            let mut storage: libc::sockaddr_un = unsafe { mem::zeroed() };
+            let mut len = mem::size_of_val(&storage) as libc::socklen_t;
+            let fd =
+                unsafe { libc::accept(control_fd, &mut storage as *mut _ as *mut _, &mut len) };
+            if fd > 0 {
+                reactor.handle_control_connection(fd);
+            }
         }
     }
 }

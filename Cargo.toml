@@ -28,6 +28,7 @@ block-modes={ tag = "aes-v0.7.5",  git="https://github.com/RustCrypto/block-ciph
 md-5={ tag = "md5-v0.9.1", git="https://github.com/RustCrypto/hashes"}
 nix="0.22.0"
 rndz={version="0.1.4",default-features = false,features =["client"],  optional=true, tag="v0.1.4", git="https://github.com/optman/rndz"}
+size = "0.4"
 
 [lib]
 name = "minivtun"

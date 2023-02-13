@@ -24,6 +24,7 @@ pub struct Config<'a> {
     pub(crate) socket_factory: Option<&'a dyn Fn(&Config) -> Result<Socket, Error>>,
     pub(crate) socket: Option<Socket>,
     pub(crate) tun_fd: RawFd,
+    pub(crate) control_fd: Option<RawFd>,
     pub ifname: Option<String>,
     pub mtu: i32,
     pub loc_tun_in: Option<Ipv4Net>,
@@ -70,6 +71,11 @@ impl<'a> Config<'a> {
         f: &'a dyn Fn(&Config) -> Result<Socket, Error>,
     ) -> &mut Self {
         self.socket_factory = Some(f);
+        self
+    }
+
+    pub fn with_control_fd(&mut self, fd: RawFd) -> &mut Self {
+        self.control_fd = Some(fd);
         self
     }
 

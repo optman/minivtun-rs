@@ -3,12 +3,15 @@
 use daemonize::Daemonize;
 use ipnet::IpNet;
 use log::{debug, info};
+use std::fs;
 use std::os::unix::io::AsRawFd;
 use std::{panic, process::Command};
-use tun::{platform::Device, Device as _};
 
 #[cfg(feature = "holepunch")]
 use std::net::UdpSocket;
+use std::os::unix::net::UnixListener;
+use std::path::Path;
+use tun::{platform::Device, Device as _};
 
 mod flags;
 use minivtun::*;
@@ -52,6 +55,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let socket_factory = config_socket_factory(&mut config);
     config.with_socket_factory(&socket_factory);
+
+    //create unix socket
+    let control_path = format!("/var/run/minivtun-{:}.sock", tun.name());
+    let control_path = Path::new(&control_path);
+    if control_path.exists() {
+        fs::remove_file(control_path)?;
+    }
+
+    let control_socket = UnixListener::bind(control_path)?;
+    config.with_control_fd(control_socket.as_raw_fd());
 
     //run
     if let Some(remote_id) = remote_id {

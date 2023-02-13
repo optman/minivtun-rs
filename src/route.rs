@@ -2,12 +2,12 @@ use ipnet::IpNet;
 use log::{debug, info};
 use rand::{thread_rng, Rng};
 use std::cell::RefCell;
+use std::collections::{hash_map::Entry, HashMap};
+use std::fmt::{Display, Formatter};
 use std::net::{IpAddr, SocketAddr};
 use std::num::Wrapping;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-
-use std::collections::{hash_map::Entry, HashMap};
 
 const RECYCLE_VA_TIMEOUT: Duration = Duration::from_secs(47);
 
@@ -189,5 +189,27 @@ impl RouteTable {
                 true
             }
         });
+    }
+}
+
+impl Display for RouteTable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        writeln!(f, "clients:")?;
+        let mut cs = self.va_map.values().collect::<Vec<_>>();
+        cs.sort_by(|a, b| a.va.partial_cmp(&b.va).unwrap());
+        for v in cs {
+            writeln!(
+                f,
+                "{:} @ {:}, last recv {:.1?}",
+                v.va,
+                v.ra.addr(),
+                v.last_recv.elapsed()
+            )?;
+        }
+        writeln!(f, "routes:")?;
+        for r in &self.vt_routes {
+            writeln!(f, "{:} -> {:}", r.0, r.1)?;
+        }
+        Ok(())
     }
 }
