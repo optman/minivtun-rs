@@ -269,7 +269,7 @@ impl<'a> poll::Reactor for Server<'a> {
             }
         }
 
-        self.rt.prune();
+        self.rt.prune(self.config.client_timeout);
         Ok(())
     }
 

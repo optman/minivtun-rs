@@ -9,8 +9,6 @@ use std::num::Wrapping;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-const RECYCLE_VA_TIMEOUT: Duration = Duration::from_secs(47);
-
 #[derive(Clone)]
 pub struct RealAddr {
     pub addr: SocketAddr,
@@ -161,10 +159,10 @@ impl RouteTable {
         gw_ra.and_then(move |ra| self.add_or_update_va(va, ra))
     }
 
-    pub fn prune(&mut self) {
+    pub fn prune(&mut self, timeout: Duration) {
         let now = Instant::now();
         self.va_map.retain(|_, v| {
-            if now.duration_since(v.last_recv) > RECYCLE_VA_TIMEOUT {
+            if now.duration_since(v.last_recv) > timeout {
                 info!("Recycle vip [{:?}] at [{:}]", v.va, v.ra.addr());
                 false
             } else {
@@ -172,7 +170,7 @@ impl RouteTable {
             }
         });
         self.ra_map.retain(|_, v| {
-            if now.duration_since(v.last_recv()) > RECYCLE_VA_TIMEOUT {
+            if now.duration_since(v.last_recv()) > timeout {
                 info!("Recycle client [{:?}]", v.addr());
                 false
             } else {

@@ -11,8 +11,9 @@ use std::os::unix::prelude::RawFd;
 use std::time::Duration;
 
 const DEFAULT_MTU: i32 = 1300;
-const DEFAULT_RECONNECT_TIMEOUT: i32 = 47;
-const DEFAULT_KEEPALIVE_INTERVAL: i32 = 7;
+const DEFAULT_RECONNECT_TIMEOUT: Duration = Duration::from_secs(47);
+const DEFAULT_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(7);
+const DEFAULT_CLIENT_TIMEOUT: Duration = Duration::from_secs(120);
 
 //https://doc.rust-lang.org/beta/unstable-book/language-features/trait-alias.html
 //
@@ -36,6 +37,7 @@ pub struct Config<'a> {
     pub routes: Vec<(IpNet, Option<IpAddr>)>,
     pub keepalive_interval: Duration,
     pub reconnect_timeout: Duration,
+    pub client_timeout: Duration,
     pub table: Option<String>,
     pub metric: Option<String>,
     pub fwmark: Option<u32>,
@@ -48,8 +50,9 @@ pub struct Config<'a> {
 impl<'a> Config<'a> {
     pub fn new() -> Config<'a> {
         Config {
-            keepalive_interval: Duration::from_secs(DEFAULT_KEEPALIVE_INTERVAL as u64),
-            reconnect_timeout: Duration::from_secs(DEFAULT_RECONNECT_TIMEOUT as u64),
+            keepalive_interval: DEFAULT_KEEPALIVE_INTERVAL,
+            reconnect_timeout: DEFAULT_RECONNECT_TIMEOUT,
+            client_timeout: DEFAULT_CLIENT_TIMEOUT,
             mtu: DEFAULT_MTU,
             ..Default::default()
         }
