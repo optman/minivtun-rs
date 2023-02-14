@@ -13,7 +13,7 @@ pub trait Reactor {
     fn keepalive(&mut self) -> Result;
     fn tunnel_recv(&mut self) -> Result;
     fn network_recv(&mut self) -> Result;
-    fn handle_control_connection(&mut self, _fd: RawFd) {}
+    fn handle_control_connection(&mut self, _fd: RawFd);
 }
 
 pub fn poll<T: Reactor>(tun_fd: RawFd, control_fd: Option<RawFd>, mut reactor: T) -> Result {

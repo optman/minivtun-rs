@@ -9,10 +9,13 @@ use crate::{
     state::State,
 };
 use log::{debug, info, trace, warn};
+use size::Size;
+use std::fmt::{Display, Formatter};
 use std::io::{Read, Write};
-
 use std::mem::MaybeUninit;
+use std::os::unix::io::FromRawFd;
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::os::unix::net::UnixStream;
 use std::time::Instant;
 use tun::platform::posix::Fd;
 
@@ -97,6 +100,40 @@ impl<'a> Client<'a> {
 
         let _ = self.socket.send(builder.build()?.as_ref());
 
+        Ok(())
+    }
+}
+
+impl<'a> Display for Client<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        writeln!(f, "client mode")?;
+        writeln!(
+            f,
+            "server addr: {:}",
+            self.config
+                .server_addr
+                .as_ref()
+                .map_or("None".to_string(), |v| v.to_string())
+        )?;
+        writeln!(f, "local addr: {:}", self.socket.local_addr().unwrap())?;
+        if let Some(ipv4) = self.config.loc_tun_in {
+            writeln!(f, "ipv4: {:}", ipv4)?;
+        }
+        if let Some(ipv6) = self.config.loc_tun_in6 {
+            writeln!(f, "ipv6: {:}", ipv6)?;
+        }
+        writeln!(f, "stats:")?;
+
+        let state = &self.state;
+        writeln!(
+            f,
+            "last ack: {:}",
+            state
+                .last_ack
+                .map_or("Never".to_string(), |v| format!("{:.1?}", v.elapsed()))
+        )?;
+        writeln!(f, "rx_bytes: {:}", Size::from_bytes(state.rx_bytes))?;
+        writeln!(f, "tx_bytes: {:}", Size::from_bytes(state.tx_bytes))?;
         Ok(())
     }
 }
@@ -213,5 +250,10 @@ impl<'a> poll::Reactor for Client<'a> {
         }
 
         Ok(())
+    }
+
+    fn handle_control_connection(&mut self, fd: RawFd) {
+        let mut us = unsafe { UnixStream::from_raw_fd(fd) };
+        let _ = us.write(self.to_string().as_bytes());
     }
 }

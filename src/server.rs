@@ -151,8 +151,8 @@ impl<'a> Server<'a> {
 }
 impl<'a> Display for Server<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        writeln!(f, "server")?;
-        writeln!(f, "listen: {:}", self.socket.local_addr().unwrap())?;
+        writeln!(f, "server mode")?;
+        writeln!(f, "local addr: {:}", self.socket.local_addr().unwrap())?;
         if let Some(ipv4) = self.config.loc_tun_in {
             writeln!(f, "ipv4: {:}", ipv4)?;
         }
@@ -167,7 +167,7 @@ impl<'a> Display for Server<'a> {
         for s in stat {
             writeln!(
                 f,
-                "{:} rx_bytes: {:} tx_bytes: {:}",
+                "{:}\trx_bytes: {:} \ttx_bytes: {:}",
                 s.0,
                 Size::from_bytes(s.1.rx_bytes),
                 Size::from_bytes(s.1.tx_bytes)
