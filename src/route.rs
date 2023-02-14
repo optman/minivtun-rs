@@ -1,8 +1,8 @@
 use ipnet::IpNet;
-use log::{debug, info};
+use log::info;
 use rand::{thread_rng, Rng};
 use std::cell::RefCell;
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::net::{IpAddr, SocketAddr};
 use std::num::Wrapping;
@@ -87,15 +87,7 @@ impl RouteTable {
         self.vt_routes.push((*net, *gw));
     }
 
-    pub fn get_va(&self, va: &IpAddr) -> Option<VirtualAddr> {
-        self.va_map.get(va).cloned()
-    }
-
-    pub fn get_ra(&mut self, addr: &SocketAddr) -> Option<RefRA> {
-        self.ra_map.get(addr).cloned()
-    }
-
-    pub fn get_or_add_ra(&mut self, addr: &SocketAddr) -> RefRA {
+    pub fn get_or_add_ra(&mut self, addr: &SocketAddr) -> &RefRA {
         self.ra_map
             .entry(*addr)
             .and_modify(|v| v.recv())
@@ -103,72 +95,70 @@ impl RouteTable {
                 info!("New client [{:?}]", addr);
                 RefRA::new(addr)
             })
-            .clone()
     }
 
-    pub fn add_or_update_va(&mut self, va: &IpAddr, ra: &RefRA) -> Option<VirtualAddr> {
+    pub fn add_or_update_va(&mut self, va: &IpAddr, ra: RefRA) -> Option<&VirtualAddr> {
         if va.is_unspecified() {
             return None;
         }
 
-        let mut va = self
+        let va = self
             .va_map
             .entry(*va)
-            .and_modify(|v| v.last_recv = Instant::now())
+            .and_modify(|v| {
+                v.last_recv = Instant::now();
+                if v.ra.addr() != ra.addr() {
+                    info!("Change vip [{:?}] to [{:?}]", va, ra.addr());
+                    v.ra = ra.clone();
+                }
+            })
             .or_insert_with(|| {
                 info!("New vip [{:?}] at [{:?}]", va, ra.addr());
-                VirtualAddr::new(*va, ra.clone())
+                VirtualAddr::new(*va, ra)
             });
-        if va.ra.addr() != ra.addr() {
-            info!("Change vip [{:?}] to [{:?}]", va.va, ra.addr());
-            va.ra = ra.clone();
+
+        Some(va)
+    }
+
+    pub fn get_route(&mut self, va: &IpAddr) -> Option<&VirtualAddr> {
+        //https://github.com/rust-lang/rfcs/blob/master/text/2094-nll.md#problem-case-3-conditional-control-flow-across-functions
+        if self.va_map.contains_key(va) {
+            return self.va_map.get(va);
         }
 
-        Some(va.clone())
+        self.get_rt_route(va)
     }
 
-    pub fn get_route(&mut self, va: &IpAddr) -> Option<VirtualAddr> {
-        self.va_map
-            .get(va)
-            .cloned()
-            .or_else(|| self.get_rt_route(va))
-    }
-
-    pub fn get_and_update_route(&mut self, va: &IpAddr, addr: &SocketAddr) -> Option<SocketAddr> {
-        let ra = match self.get_ra(addr) {
-            Some(ra) => ra,
-            None => {
-                debug!("an orphan packet");
-                return None;
-            }
-        };
-
-        match self.va_map.entry(*va).and_modify(|v| {
+    pub fn update_va(&mut self, va: &IpAddr, addr: &SocketAddr) -> bool {
+        let Self { va_map, ra_map, .. } = self;
+        if let Some(v) = va_map.get_mut(va) {
             v.last_recv = Instant::now();
             if v.ra.addr() == *addr {
                 v.ra.recv();
-            } else {
+            } else if let Some(ra) = ra_map.get(addr) {
                 info!("Change vip [{:?}] to [{:?}]", va, ra.addr());
-                v.ra = ra;
+                v.ra = ra.clone();
+            } else {
+                return false;
             }
-        }) {
-            Entry::Occupied(va) => Some(va.get().ra.addr()),
-            _ => self.get_rt_route(va).map(|va| va.ra.addr()),
+            true
+        } else {
+            false
         }
     }
 
-    pub fn get_rt_route(&mut self, va: &IpAddr) -> Option<VirtualAddr> {
+    pub fn get_rt_route(&mut self, va: &IpAddr) -> Option<&VirtualAddr> {
         let mut gw_ra: Option<RefRA> = None;
         for (net, gw) in &self.vt_routes {
             if net.contains(va) {
-                gw_ra = self.get_va(gw).map(|va| va.ra);
+                gw_ra = self.va_map.get(gw).map(|va| va.ra.clone());
                 if gw_ra.is_some() {
                     break;
                 }
             }
         }
 
-        gw_ra.and_then(|ra| self.add_or_update_va(va, &ra))
+        gw_ra.and_then(move |ra| self.add_or_update_va(va, ra))
     }
 
     pub fn prune(&mut self) {

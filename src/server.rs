@@ -93,12 +93,9 @@ impl<'a> Server<'a> {
 
     fn forward_local(&mut self, ra: &SocketAddr, pkt: &[u8]) -> Result {
         let src = source_ip(pkt)?;
-        match self.rt.get_and_update_route(&src, ra) {
-            Some(_) => {}
-            None => {
-                debug!("unknown src {:}", src);
-                return Ok(());
-            }
+        if !self.rt.update_va(&src, ra) {
+            debug!("unknown src {:}", src);
+            return Ok(());
         }
 
         let mut stat = self.stats.entry(src).or_default();
@@ -121,14 +118,14 @@ impl<'a> Server<'a> {
         src: SocketAddr,
         pkt: msg::echo::Packet<T>,
     ) -> Result {
-        let ra = self.rt.get_or_add_ra(&src);
+        let ra = self.rt.get_or_add_ra(&src).clone();
 
         let (va4, va6) = pkt.ip_addr()?;
         if !va4.is_unspecified() {
-            self.rt.add_or_update_va(&va4.into(), &ra);
+            self.rt.add_or_update_va(&va4.into(), ra.clone());
         }
         if !va6.is_unspecified() {
-            self.rt.add_or_update_va(&va6.into(), &ra);
+            self.rt.add_or_update_va(&va6.into(), ra.clone());
         }
 
         let mut builder = msg::Builder::default()
