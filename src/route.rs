@@ -81,6 +81,10 @@ pub struct RouteTable {
 }
 
 impl RouteTable {
+    pub fn contains(&self, va: &IpAddr) -> bool {
+        self.va_map.contains_key(va)
+    }
+
     pub fn add_route(&mut self, net: &IpNet, gw: &IpAddr) {
         self.vt_routes.push((*net, *gw));
     }

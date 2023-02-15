@@ -274,7 +274,10 @@ impl<'a> poll::Reactor for Server<'a> {
             }
         }
 
-        self.rt.prune(self.config.client_timeout);
+        let Self { rt, stats, .. } = self;
+
+        rt.prune(self.config.client_timeout);
+        stats.retain(|k, _| rt.contains(k));
         Ok(())
     }
 
