@@ -109,31 +109,48 @@ impl<'a> Display for Client<'a> {
         writeln!(f, "client mode")?;
         writeln!(
             f,
-            "server addr: {:}",
+            "{:<15} {:}",
+            "server addr:",
             self.config
                 .server_addr
                 .as_ref()
                 .map_or("None".to_string(), |v| v.to_string())
         )?;
-        writeln!(f, "local addr: {:}", self.socket.local_addr().unwrap())?;
+        writeln!(
+            f,
+            "{:<15} {:}",
+            "local addr:",
+            self.socket.local_addr().unwrap()
+        )?;
         if let Some(ipv4) = self.config.loc_tun_in {
-            writeln!(f, "ipv4: {:}", ipv4)?;
+            writeln!(f, "{:<15} {:}", "ipv4:", ipv4)?;
         }
         if let Some(ipv6) = self.config.loc_tun_in6 {
-            writeln!(f, "ipv6: {:}", ipv6)?;
+            writeln!(f, "{:<15} {:}", "ipv6:", ipv6)?;
         }
         writeln!(f, "stats:")?;
 
         let state = &self.state;
         writeln!(
             f,
-            "last ack: {:}",
+            "{:<15} {:}",
+            "last ack:",
             state
                 .last_ack
-                .map_or("Never".to_string(), |v| format!("{:.1?}", v.elapsed()))
+                .map_or("Never".to_string(), |v| format!("{:.0?} ago", v.elapsed()))
         )?;
-        writeln!(f, "rx_bytes: {:}", Size::from_bytes(state.rx_bytes))?;
-        writeln!(f, "tx_bytes: {:}", Size::from_bytes(state.tx_bytes))?;
+        writeln!(
+            f,
+            "{:<15} {:}",
+            "rx:",
+            Size::from_bytes(state.rx_bytes).to_string()
+        )?;
+        writeln!(
+            f,
+            "{:<15} {:}",
+            "tx:",
+            Size::from_bytes(state.tx_bytes).to_string()
+        )?;
         Ok(())
     }
 }

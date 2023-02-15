@@ -152,14 +152,19 @@ impl<'a> Server<'a> {
 impl<'a> Display for Server<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         writeln!(f, "server mode")?;
-        writeln!(f, "local addr: {:}", self.socket.local_addr().unwrap())?;
+        writeln!(
+            f,
+            "{:<15} {:}",
+            "local addr:",
+            self.socket.local_addr().unwrap()
+        )?;
         if let Some(ipv4) = self.config.loc_tun_in {
-            writeln!(f, "ipv4: {:}", ipv4)?;
+            writeln!(f, "{:<15} {:}", "ipv4:", ipv4)?;
         }
         if let Some(ipv6) = self.config.loc_tun_in6 {
-            writeln!(f, "ipv6: {:}", ipv6)?;
+            writeln!(f, "{:<15} {:}", "ipv6:", ipv6)?;
         }
-        writeln!(f, "{:}", self.rt)?;
+        write!(f, "{:}", self.rt)?;
 
         writeln!(f, "stats:")?;
         let mut stat = self.stats.iter().collect::<Vec<_>>();
@@ -167,10 +172,10 @@ impl<'a> Display for Server<'a> {
         for s in stat {
             writeln!(
                 f,
-                "{:}\trx_bytes: {:} \ttx_bytes: {:}",
+                "{:<15} rx: {:>10}\t tx: {:>10}",
                 s.0,
-                Size::from_bytes(s.1.rx_bytes),
-                Size::from_bytes(s.1.tx_bytes)
+                Size::from_bytes(s.1.rx_bytes).to_string(),
+                Size::from_bytes(s.1.tx_bytes).to_string(),
             )?;
         }
 

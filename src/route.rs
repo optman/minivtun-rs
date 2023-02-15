@@ -1,5 +1,5 @@
 use ipnet::IpNet;
-use log::info;
+use log::{debug, info};
 use rand::{thread_rng, Rng};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -90,7 +90,7 @@ impl RouteTable {
             .entry(*addr)
             .and_modify(|v| v.recv())
             .or_insert_with(|| {
-                info!("New client [{:?}]", addr);
+                debug!("New client [{:?}]", addr);
                 RefRA::new(addr)
             })
     }
@@ -163,7 +163,7 @@ impl RouteTable {
         let now = Instant::now();
         self.va_map.retain(|_, v| {
             if now.duration_since(v.last_recv) > timeout {
-                info!("Recycle vip [{:?}] at [{:}]", v.va, v.ra.addr());
+                debug!("Recycle vip [{:?}] at [{:}]", v.va, v.ra.addr());
                 false
             } else {
                 true
@@ -171,7 +171,7 @@ impl RouteTable {
         });
         self.ra_map.retain(|_, v| {
             if now.duration_since(v.last_recv()) > timeout {
-                info!("Recycle client [{:?}]", v.addr());
+                debug!("Recycle client [{:?}]", v.addr());
                 false
             } else {
                 true
@@ -179,24 +179,23 @@ impl RouteTable {
         });
     }
 }
-
 impl Display for RouteTable {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        writeln!(f, "routes:")?;
+        for r in &self.vt_routes {
+            writeln!(f, "{:} @ {:}", r.0, r.1)?;
+        }
         writeln!(f, "clients:")?;
         let mut cs = self.va_map.values().collect::<Vec<_>>();
         cs.sort_by(|a, b| a.va.partial_cmp(&b.va).unwrap());
         for v in cs {
             writeln!(
                 f,
-                "{:} @ {:}, last recv {:.1?}",
+                "{:<15} @ {:<50} {:>6.0?} ago",
                 v.va,
                 v.ra.addr(),
                 v.last_recv.elapsed()
             )?;
-        }
-        writeln!(f, "routes:")?;
-        for r in &self.vt_routes {
-            writeln!(f, "{:} -> {:}", r.0, r.1)?;
         }
         Ok(())
     }
