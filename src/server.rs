@@ -155,7 +155,7 @@ impl<'a> Display for Server<'a> {
         writeln!(
             f,
             "{:<15} {:}",
-            "local addr:",
+            "local_addr:",
             self.socket.local_addr().unwrap()
         )?;
         if let Some(ipv4) = self.config.loc_tun_in {
@@ -164,6 +164,32 @@ impl<'a> Display for Server<'a> {
         if let Some(ipv6) = self.config.loc_tun_in6 {
             writeln!(f, "{:<15} {:}", "ipv6:", ipv6)?;
         }
+
+        #[cfg(feature = "holepunch")]
+        if let Some(ref rndz) = self.config.rndz {
+            writeln!(
+                f,
+                "{:<15} {:}",
+                "rndz_server:",
+                rndz.server.as_ref().unwrap_or(&"".to_owned())
+            )?;
+            writeln!(
+                f,
+                "{:<15} {:}",
+                "rndz_id:",
+                rndz.local_id.as_ref().unwrap_or(&"".to_owned())
+            )?;
+            writeln!(
+                f,
+                "{:<15} {:}",
+                "rndz_health:",
+                self.socket
+                    .last_health()
+                    .map(|v| format!("{:.0?} ago", v.elapsed()))
+                    .unwrap_or("Never".to_owned())
+            )?;
+        }
+
         write!(f, "{:}", self.rt)?;
 
         writeln!(f, "stats:")?;

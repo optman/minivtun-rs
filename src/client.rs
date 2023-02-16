@@ -110,16 +110,17 @@ impl<'a> Display for Client<'a> {
         writeln!(
             f,
             "{:<15} {:}",
-            "server addr:",
+            "server_addr:",
             self.config
                 .server_addr
-                .as_ref()
-                .map_or("None".to_string(), |v| v.to_string())
+                .clone()
+                .or(self.socket.peer_addr().map(|v| v.to_string()).ok())
+                .unwrap_or("NA".to_string())
         )?;
         writeln!(
             f,
             "{:<15} {:}",
-            "local addr:",
+            "local_addr:",
             self.socket.local_addr().unwrap()
         )?;
         if let Some(ipv4) = self.config.loc_tun_in {
@@ -128,13 +129,36 @@ impl<'a> Display for Client<'a> {
         if let Some(ipv6) = self.config.loc_tun_in6 {
             writeln!(f, "{:<15} {:}", "ipv6:", ipv6)?;
         }
+
+        #[cfg(feature = "holepunch")]
+        if let Some(ref rndz) = self.config.rndz {
+            writeln!(
+                f,
+                "{:<15} {:}",
+                "rndz_server:",
+                rndz.server.as_ref().unwrap_or(&"".to_owned())
+            )?;
+            writeln!(
+                f,
+                "{:<15} {:}",
+                "rndz_local:",
+                rndz.local_id.as_ref().unwrap_or(&"".to_owned())
+            )?;
+            writeln!(
+                f,
+                "{:<15} {:}",
+                "rndz_remote:",
+                rndz.remote_id.as_ref().unwrap_or(&"".to_owned())
+            )?;
+        }
+
         writeln!(f, "stats:")?;
 
         let state = &self.state;
         writeln!(
             f,
             "{:<15} {:}",
-            "last ack:",
+            "last_ack:",
             state
                 .last_ack
                 .map_or("Never".to_string(), |v| format!("{:.0?} ago", v.elapsed()))

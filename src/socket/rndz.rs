@@ -3,6 +3,7 @@ use rndz::udp as rndz;
 use std::io::Result;
 use std::net::{SocketAddr, UdpSocket};
 use std::ops::{Deref, DerefMut};
+use std::time::{Duration, Instant};
 
 pub struct RndzSocket {
     rndz: rndz::Client,
@@ -46,6 +47,13 @@ impl DerefMut for RndzSocket {
 
 impl XSocket for RndzSocket {
     fn is_stale(&self) -> bool {
-        self.rndz.is_stale()
+        self.rndz
+            .last_pong()
+            .map(|v| v.elapsed() > Duration::from_secs(60))
+            .unwrap_or(false)
+    }
+
+    fn last_health(&self) -> Option<Instant> {
+        self.rndz.last_pong()
     }
 }
