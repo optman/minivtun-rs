@@ -45,6 +45,7 @@ pub struct Config<'a> {
     pub rebind: bool,
     #[cfg(feature = "holepunch")]
     pub rndz: Option<RndzConfig<'a>>,
+    pub info: bool,
 }
 
 impl<'a> Config<'a> {

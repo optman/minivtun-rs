@@ -7,14 +7,17 @@ use std::fs;
 use std::os::unix::io::AsRawFd;
 use std::{panic, process::Command};
 
+use std::io::Read;
 #[cfg(feature = "holepunch")]
 use std::net::UdpSocket;
-use std::os::unix::net::UnixListener;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use tun::{platform::Device, Device as _};
 
 mod flags;
 use minivtun::*;
+
+const CONTROL_PATH_BASE: &str = "/var/run/minivtun/";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init_from_env(
@@ -29,6 +32,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut config = Config::new();
     flags::parse(&mut config)?;
+
+    //show info only
+    if config.info {
+        let control_path = Path::new(CONTROL_PATH_BASE)
+            .join(
+                config
+                    .ifname
+                    .as_ref()
+                    .expect("inteface name not set")
+                    .replace("%d", "0"),
+            )
+            .with_extension("sock");
+
+        if let Ok(mut ctrl) = UnixStream::connect(control_path) {
+            let mut buf = String::new();
+            ctrl.read_to_string(&mut buf)?;
+            println!("{:}", buf);
+        }
+        return Ok(());
+    }
 
     //create tun
     let tun = config_tun(&config)?;
@@ -57,12 +80,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     config.with_socket_factory(&socket_factory);
 
     //create unix socket
-    let control_path = format!("/var/run/minivtun-{:}.sock", tun.name());
-    let control_path = Path::new(&control_path);
+    let control_path = Path::new(CONTROL_PATH_BASE)
+        .join(tun.name())
+        .with_extension("sock");
     if control_path.exists() {
-        fs::remove_file(control_path)?;
+        fs::remove_file(&control_path)?;
     }
 
+    fs::create_dir_all(CONTROL_PATH_BASE)?;
     let control_socket = UnixListener::bind(control_path)?;
     config.with_control_fd(control_socket.as_raw_fd());
 

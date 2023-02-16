@@ -35,7 +35,8 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         .arg(Arg::from_usage("-M, --metric [metric]               'metric of attached routes'"))
         .arg(Arg::from_usage("-F, --fwmark [fwmark_num]           'fwmark set on vpn traffic'"))
         .arg(Arg::from_usage("-w, --wait-dns                      'wait for DNS resolve ready after service started'"))
-        .arg(Arg::from_usage("    --rebind                        'rebind socket before reconnect"))
+        .arg(Arg::from_usage("    --rebind                        'rebind socket before reconnect'"))
+        .arg(Arg::from_usage("-i, --info                          'view current tunnel info"))
         ;
     #[cfg(feature = "holepunch")]
     let app = {
@@ -163,6 +164,8 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
     config.wait_dns = matches.is_present("wait-dns");
 
     config.rebind = matches.is_present("rebind");
+
+    config.info = matches.is_present("info");
 
     Ok(())
 }
