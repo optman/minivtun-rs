@@ -58,6 +58,8 @@ impl<'a> Client<'a> {
     }
 
     fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result {
+        self.state.tx_bytes += pkt.len() as u64;
+
         let buf = msg::Builder::default()
             .cryptor(&self.config.cryptor)?
             .seq(self.state.next_seq())?
@@ -71,6 +73,8 @@ impl<'a> Client<'a> {
     }
 
     fn forward_local(&mut self, pkt: &[u8]) -> Result {
+        self.state.rx_bytes += pkt.len() as u64;
+
         match pkt[0] >> 4 {
             4 | 6 => {
                 let _ = self.tun.write(pkt)?;
@@ -199,8 +203,6 @@ impl<'a> poll::Reactor for Client<'a> {
             }
         }
 
-        self.state.tx_bytes += size as u64;
-
         Ok(())
     }
 
@@ -235,8 +237,6 @@ impl<'a> poll::Reactor for Client<'a> {
                 trace!("invalid packet")
             }
         }
-
-        self.state.rx_bytes += size as u64;
 
         Ok(())
     }
