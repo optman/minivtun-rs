@@ -1,6 +1,5 @@
 use clap::{App, Arg};
 use ipnet::IpNet;
-use log::warn;
 #[cfg(feature = "holepunch")]
 use minivtun::RndzConfig;
 use minivtun::{cryptor, Config, Error};
@@ -92,18 +91,13 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
             .map_err(|_| Error::InvalidArg("invalid local ipv6 address".into()))?;
     }
 
-    match (
+    if let (Some(t), Some(key)) = (
         matches.value_of("type").or(Some(DEFAULT_CIPHER)),
         matches.value_of("key"),
     ) {
-        (Some(t), Some(key)) => {
-            config.cryptor = cryptor::Builder::new(key, t)
-                .map_err(|_| Error::InvalidArg("invalid encryption type ".into()))?
-                .build();
-        }
-        _ => {
-            warn!("*** WARNING: Transmission will not be encrypted.");
-        }
+        config.cryptor = cryptor::Builder::new(key, t)
+            .map_err(|_| Error::InvalidArg("invalid encryption type ".into()))?
+            .build();
     }
 
     config.daemonize = matches.is_present("daemon");

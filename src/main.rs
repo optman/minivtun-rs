@@ -2,7 +2,7 @@
 
 use daemonize::Daemonize;
 use ipnet::IpNet;
-use log::{debug, info};
+use log::{debug, info, warn};
 use std::fs;
 use std::os::unix::io::AsRawFd;
 use std::{panic, process::Command};
@@ -90,6 +90,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(CONTROL_PATH_BASE)?;
     let control_socket = UnixListener::bind(control_path)?;
     config.with_control_fd(control_socket.as_raw_fd());
+
+    if config.cryptor.is_none() {
+        warn!("*** WARNING: Transmission will not be encrypted.");
+    }
 
     //run
     if let Some(remote_id) = remote_id {
