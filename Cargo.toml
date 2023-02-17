@@ -1,6 +1,6 @@
 [package]
 name = "minivtun-rs"
-version = "0.1.4"
+version = "0.1.5"
 authors = ["optman <optman@gmail.com>"]
 edition = "2018"
 
