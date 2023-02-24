@@ -9,6 +9,7 @@ use crate::{
     state::State,
 };
 use log::{debug, info, trace, warn};
+use pretty_duration::pretty_duration;
 use size::Size;
 use std::fmt::{Display, Formatter};
 use std::io::{Read, Write};
@@ -163,9 +164,10 @@ impl<'a> Display for Client<'a> {
             f,
             "{:<15} {:}",
             "last_ack:",
-            state
-                .last_ack
-                .map_or("Never".to_string(), |v| format!("{:.0?} ago", v.elapsed()))
+            state.last_ack.map_or("Never".to_string(), |v| format!(
+                "{:.0?} ago",
+                pretty_duration(&v.elapsed(), None)
+            ))
         )?;
         writeln!(
             f,
