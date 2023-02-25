@@ -1,6 +1,5 @@
 use ipnet::IpNet;
 use log::{debug, info};
-use pretty_duration::pretty_duration;
 use rand::{thread_rng, Rng};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -199,7 +198,7 @@ impl Display for RouteTable {
                 "{:<15} @ {:<50} {:>6.0?} ago",
                 v.va,
                 v.ra.addr(),
-                pretty_duration(&v.last_recv.elapsed(), None)
+                v.last_recv.elapsed()
             )?;
         }
         Ok(())

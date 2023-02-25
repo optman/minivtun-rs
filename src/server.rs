@@ -9,7 +9,6 @@ use crate::{
     socket::Socket,
 };
 use log::{debug, info, trace, warn};
-use pretty_duration::pretty_duration;
 use size::Size;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
@@ -186,7 +185,7 @@ impl<'a> Display for Server<'a> {
                 "rndz_health:",
                 self.socket
                     .last_health()
-                    .map(|v| format!("{:.0?} ago", pretty_duration(&v.elapsed(), None)))
+                    .map(|v| format!("{:.0?} ago", v.elapsed()))
                     .unwrap_or("Never".to_owned())
             )?;
         }

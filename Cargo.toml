@@ -30,7 +30,6 @@ md-5={ tag = "md5-v0.9.1", git="https://github.com/RustCrypto/hashes"}
 nix="0.22.0"
 rndz={rev="70be7838b0",  optional=true, git="https://github.com/optman/rndz"}
 size = "0.4"
-pretty-duration = "0.1.1"
 
 
 [lib]
