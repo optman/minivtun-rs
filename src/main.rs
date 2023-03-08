@@ -110,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let socket = config
             .socket_factory()
             .as_ref()
-            .expect("socket factory not set")(&config)?;
+            .expect("socket factory not set")(&config, config.wait_dns)?;
         info!(
             "Mini virtual tunneling server on {:}, interface: {:}.",
             socket.local_addr().expect("local address not set"),
@@ -220,10 +220,10 @@ fn config_tun(config: &Config) -> Result<Device, Box<dyn std::error::Error>> {
 }
 
 #[cfg(feature = "holepunch")]
-fn create_rndz_svr_sk(config: &Config) -> Result<UdpSocket, Error> {
+fn create_rndz_svr_sk(config: &Config, wait_dns: bool) -> Result<UdpSocket, Error> {
     let bind_addr = match config.listen_addr {
         Some(addr) => addr,
-        None => choose_bind_addr(&config.rndz.as_ref().unwrap().server, config)?,
+        None => choose_bind_addr(&config.rndz.as_ref().unwrap().server, config, wait_dns)?,
     };
     let mut s = UdpSocket::bind(bind_addr)?;
     config_socket(&mut s, config)?;

@@ -14,6 +14,7 @@ use std::thread;
 pub fn choose_bind_addr(
     server_addr: &Option<String>,
     config: &Config,
+    wait_dns: bool,
 ) -> Result<SocketAddr, Error> {
     let server_addr: Option<SocketAddr> = match server_addr {
         Some(ref server_addr) => loop {
@@ -24,7 +25,7 @@ pub fn choose_bind_addr(
             match addrs {
                 Ok(mut addrs) => break addrs.next(),
                 Err(err) => {
-                    if config.wait_dns {
+                    if wait_dns {
                         thread::sleep(config.reconnect_timeout);
                         continue;
                     } else {
@@ -56,11 +57,11 @@ pub fn config_socket(socket: &mut UdpSocket, _config: &Config) -> Result<(), Err
     Ok(())
 }
 #[allow(clippy::type_complexity)]
-pub fn native_socket_factory() -> Box<dyn Fn(&Config) -> Result<Socket, Error>> {
-    let socket_factory = |config: &Config| -> Result<Socket, Error> {
+pub fn native_socket_factory() -> Box<dyn Fn(&Config, bool) -> Result<Socket, Error>> {
+    let socket_factory = |config: &Config, wait_dns: bool| -> Result<Socket, Error> {
         let bind_addr = match config.listen_addr {
             Some(addr) => addr,
-            None => choose_bind_addr(&config.server_addr, config)?,
+            None => choose_bind_addr(&config.server_addr, config, wait_dns)?,
         };
         let mut socket = UdpSocket::bind(bind_addr).expect("listen address bind fail.");
 
@@ -74,27 +75,46 @@ pub fn native_socket_factory() -> Box<dyn Fn(&Config) -> Result<Socket, Error>> 
 
 #[cfg(feature = "holepunch")]
 #[allow(clippy::type_complexity)]
-pub fn rndz_socket_factory() -> Box<dyn Fn(&Config) -> Result<Socket, Error>> {
-    let socket_factory = move |config: &Config| -> Result<Socket, Error> {
+pub fn rndz_socket_factory() -> Box<dyn Fn(&Config, bool) -> Result<Socket, Error>> {
+    let socket_factory = move |config: &Config, wait_dns: bool| -> Result<Socket, Error> {
         let rndz = config.rndz.as_ref().expect("rndz config not set");
         let server = rndz.server.as_ref().expect("rndz server not set");
         let id = rndz.local_id.as_ref().expect("rndz local id not set");
-        let mut socket = match rndz.svr_sk_builder {
-            Some(ref builder) => RndzSocket::new_with_socket(server, id, builder(config)?)?,
-            None => RndzSocket::new(server, id, config.listen_addr).map_err(|e| {
-                error!("create rndz socket fail");
-                e
-            })?,
+        let builder = || -> Result<RndzSocket, Error> {
+            let mut socket = match rndz.svr_sk_builder {
+                Some(ref builder) => {
+                    RndzSocket::new_with_socket(server, id, builder(config, wait_dns)?)?
+                }
+                None => RndzSocket::new(server, id, config.listen_addr).map_err(|e| {
+                    error!("create rndz socket fail");
+                    e
+                })?,
+            };
+
+            if let Some(ref remote_id) = rndz.remote_id {
+                socket.connect(remote_id).map_err(|e| {
+                    error!("rndz connect fail, {:}", e);
+                    e
+                })?;
+            } else {
+                socket.listen()?;
+            }
+
+            Ok(socket)
         };
 
-        if let Some(ref remote_id) = rndz.remote_id {
-            socket.connect(remote_id).map_err(|e| {
-                error!("rndz connect fail");
-                e
-            })?;
-        } else {
-            socket.listen()?;
-        }
+        let mut socket = loop {
+            match builder() {
+                Err(e) => {
+                    if wait_dns {
+                        thread::sleep(config.reconnect_timeout);
+                        continue;
+                    }
+                    Err(e)?
+                }
+                Ok(s) => break s,
+            }
+        };
 
         config_socket(&mut socket, config)?;
 
@@ -107,7 +127,7 @@ pub fn rndz_socket_factory() -> Box<dyn Fn(&Config) -> Result<Socket, Error>> {
 #[allow(clippy::type_complexity)]
 pub fn config_socket_factory(
     _config: &mut Config,
-) -> Box<dyn Fn(&Config) -> Result<Socket, Error>> {
+) -> Box<dyn Fn(&Config, bool) -> Result<Socket, Error>> {
     #[cfg(not(feature = "holepunch"))]
     let socket_factory = native_socket_factory();
 

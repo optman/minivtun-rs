@@ -22,7 +22,7 @@ const DEFAULT_CLIENT_TIMEOUT: Duration = Duration::from_secs(120);
 #[derive(Default)]
 pub struct Config<'a> {
     #[allow(clippy::type_complexity)]
-    pub(crate) socket_factory: Option<&'a dyn Fn(&Config) -> Result<Socket, Error>>,
+    pub(crate) socket_factory: Option<&'a dyn Fn(&Config, bool) -> Result<Socket, Error>>,
     pub(crate) socket: Option<Socket>,
     pub(crate) tun_fd: RawFd,
     pub(crate) control_fd: Option<RawFd>,
@@ -72,7 +72,7 @@ impl<'a> Config<'a> {
     #[allow(clippy::type_complexity)]
     pub fn with_socket_factory(
         &mut self,
-        f: &'a dyn Fn(&Config) -> Result<Socket, Error>,
+        f: &'a dyn Fn(&Config, bool) -> Result<Socket, Error>,
     ) -> &mut Self {
         self.socket_factory = Some(f);
         self
@@ -102,7 +102,7 @@ impl<'a> Config<'a> {
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn socket_factory(&self) -> &Option<&'_ dyn Fn(&Config) -> Result<Socket, Error>> {
+    pub fn socket_factory(&self) -> &Option<&'_ dyn Fn(&Config, bool) -> Result<Socket, Error>> {
         &self.socket_factory
     }
 }

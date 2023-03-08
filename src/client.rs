@@ -37,7 +37,9 @@ impl<'a> Client<'a> {
             None => config
                 .socket_factory
                 .as_ref()
-                .expect("neither socket nor socket_factory is set")(&config)?,
+                .expect("neither socket nor socket_factory is set")(
+                &config, config.wait_dns
+            )?,
         };
         let tun = Fd::new(config.tun_fd).unwrap();
         Ok(Self {
@@ -257,7 +259,7 @@ impl<'a> poll::Reactor for Client<'a> {
 
                     if self.config.rebind {
                         if let Some(ref factory) = self.config.socket_factory {
-                            match factory(&self.config) {
+                            match factory(&self.config, false) {
                                 Ok(socket) => {
                                     debug!("rebind to {:}", socket.local_addr().unwrap());
                                     self.socket = socket
