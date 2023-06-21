@@ -28,6 +28,7 @@ pub struct Client<'a> {
     socket: Socket,
     state: State,
     tun: Fd,
+    last_rebind: Option<Instant>,
 }
 
 impl<'a> Client<'a> {
@@ -47,6 +48,7 @@ impl<'a> Client<'a> {
             socket,
             tun,
             state: Default::default(),
+            last_rebind: None,
         })
     }
 
@@ -255,9 +257,14 @@ impl<'a> poll::Reactor for Client<'a> {
                 });
 
                 if reconnect {
-                    info!("Reconnect...");
-
-                    if self.config.rebind {
+                    if self.config.rebind
+                        && self
+                            .last_rebind
+                            .map(|l| l.elapsed() > self.config.rebind_timeout)
+                            .unwrap_or(true)
+                    {
+                        info!("Rebind...");
+                        self.last_rebind = Some(Instant::now());
                         if let Some(ref factory) = self.config.socket_factory {
                             match factory(&self.config, false) {
                                 Ok(socket) => {
@@ -267,6 +274,8 @@ impl<'a> poll::Reactor for Client<'a> {
                                 Err(e) => warn!("rebind fail, {:}", e),
                             }
                         }
+                    } else {
+                        info!("Reconnect...");
                     }
 
                     self.state.last_connect = Some(Instant::now());
