@@ -36,6 +36,7 @@ pub struct Server<'a> {
     tun: Fd,
     rt: RouteTable,
     last_rebind: Option<Instant>,
+    last_health: Option<Instant>,
 }
 
 impl<'a> Server<'a> {
@@ -57,6 +58,7 @@ impl<'a> Server<'a> {
             stats: Default::default(),
             rt: Default::default(),
             last_rebind: None,
+            last_health: None,
         })
     }
 
@@ -187,6 +189,7 @@ impl<'a> Display for Server<'a> {
                 "rndz_health:",
                 self.socket
                     .last_health()
+                    .or(self.last_health)
                     .map(|v| format!("{:.0?} ago", v.elapsed()))
                     .unwrap_or("Never".to_owned())
             )?;
@@ -274,16 +277,20 @@ impl<'a> poll::Reactor for Server<'a> {
     fn keepalive(&mut self) -> Result {
         let Config {
             rebind,
-            reconnect_timeout,
+            rebind_timeout,
             socket_factory,
             ..
         } = self.config;
 
         if rebind
-            && self.socket.is_stale()
+            && (self.socket.is_stale()
+                | self
+                    .last_health
+                    .map(|l| l.elapsed() > rebind_timeout)
+                    .unwrap_or(false))
             && self
                 .last_rebind
-                .map(|l| l.elapsed() > reconnect_timeout)
+                .map(|l| l.elapsed() > rebind_timeout)
                 .unwrap_or(true)
         {
             info!("Rebind...");
@@ -301,6 +308,10 @@ impl<'a> poll::Reactor for Server<'a> {
                 }
             }
         }
+
+        if let Some(last_health) = self.socket.last_health() {
+            self.last_health = Some(last_health);
+        };
 
         let Self { rt, stats, .. } = self;
 

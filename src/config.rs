@@ -14,6 +14,7 @@ const DEFAULT_MTU: i32 = 1300;
 const DEFAULT_RECONNECT_TIMEOUT: Duration = Duration::from_secs(47);
 const DEFAULT_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(7);
 const DEFAULT_CLIENT_TIMEOUT: Duration = Duration::from_secs(120);
+const DEFAULT_REBIND_TIMEOUT: Duration = Duration::from_secs(60 * 30);
 
 //https://doc.rust-lang.org/beta/unstable-book/language-features/trait-alias.html
 //
@@ -37,6 +38,7 @@ pub struct Config<'a> {
     pub routes: Vec<(IpNet, Option<IpAddr>)>,
     pub keepalive_interval: Duration,
     pub reconnect_timeout: Duration,
+    pub rebind_timeout: Duration,
     pub client_timeout: Duration,
     pub table: Option<String>,
     pub metric: Option<String>,
@@ -53,6 +55,7 @@ impl<'a> Config<'a> {
         Config {
             keepalive_interval: DEFAULT_KEEPALIVE_INTERVAL,
             reconnect_timeout: DEFAULT_RECONNECT_TIMEOUT,
+            rebind_timeout: DEFAULT_REBIND_TIMEOUT,
             client_timeout: DEFAULT_CLIENT_TIMEOUT,
             mtu: DEFAULT_MTU,
             ..Default::default()
