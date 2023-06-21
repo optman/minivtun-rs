@@ -10,6 +10,7 @@ const DEFAULT_CIPHER: &str = "aes-128";
 pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
     let default_mtu = config.mtu.to_string();
     let default_reconnect_timeo = config.reconnect_timeout.as_secs().to_string();
+    let default_rebind_timeo = config.rebind_timeout.as_secs().to_string();
     let default_keepalive_interval = config.keepalive_interval.as_secs().to_string();
     let default_client_timeo = config.client_timeout.as_secs().to_string();
 
@@ -27,6 +28,7 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         .arg(Arg::from_usage("-v, --route... [network/prefix[=gw]]  'attached IPv4/IPv6 route on this link, can be multiple'"))
         .arg(Arg::from_usage("-t, --type [encryption_type]        'encryption type'").default_value(DEFAULT_CIPHER).possible_values(&["plain", "aes-128", "aes-256"]))
         .arg(Arg::from_usage("-R, --reconnect-timeo [N]           'maximum inactive time (seconds) before reconnect'").default_value(&default_reconnect_timeo))
+        .arg(Arg::from_usage("    --rebind-timeo [N]              'maximum time (seconds) before rebind'").default_value(&default_rebind_timeo))
         .arg(Arg::from_usage("    --client-timeo [N]              'maximum inactive time (seconds) before client timeout'").default_value(&default_client_timeo))
         .arg(Arg::from_usage("-K, --keepalive [N]                 'seconds between keep-alive tests'")
             .default_value(&default_keepalive_interval))
@@ -136,6 +138,13 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
             .parse()
             .map(Duration::from_secs)
             .map_err(|_| Error::InvalidArg("reconnect-timeo".into()))?;
+    }
+
+    if let Some(v) = matches.value_of("rebind-timeo") {
+        config.rebind_timeout = v
+            .parse()
+            .map(Duration::from_secs)
+            .map_err(|_| Error::InvalidArg("rebind-timeo".into()))?;
     }
 
     if let Some(v) = matches.value_of("client-timeo") {
