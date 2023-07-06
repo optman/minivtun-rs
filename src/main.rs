@@ -60,15 +60,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let remote_id = {
         #[cfg(not(feature = "holepunch"))]
         {
-            config.server_addr.as_ref().cloned()
+            config.server_addrs.as_ref().map(|v| format!("{:?}", v))
         }
 
         #[cfg(feature = "holepunch")]
         config
-            .server_addr
+            .server_addrs
             .as_ref()
-            .or_else(|| config.rndz.as_ref().and_then(|c| c.remote_id.as_ref()))
-            .cloned()
+            .map(|v| format!("{:?}", v))
+            .or_else(|| config.rndz.as_ref().and_then(|c| c.remote_id.clone()))
     };
 
     #[cfg(feature = "holepunch")]
@@ -223,7 +223,11 @@ fn config_tun(config: &Config) -> Result<Device, Box<dyn std::error::Error>> {
 fn create_rndz_svr_sk(config: &Config, wait_dns: bool) -> Result<UdpSocket, Error> {
     let bind_addr = match config.listen_addr {
         Some(addr) => addr,
-        None => choose_bind_addr(&config.rndz.as_ref().unwrap().server, config, wait_dns)?,
+        None => choose_bind_addr(
+            config.rndz.as_ref().unwrap().server.as_ref(),
+            config,
+            wait_dns,
+        )?,
     };
     let mut s = UdpSocket::bind(bind_addr)?;
     config_socket(&mut s, config)?;

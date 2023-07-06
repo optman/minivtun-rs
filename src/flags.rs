@@ -18,7 +18,7 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         .version(env!("CARGO_PKG_VERSION"))
         .about("Mini virtual tunneller in non-standard protocol")
         .arg(Arg::from_usage("-l, --local [ip:port] 'local IP:port for server to listen'"))
-        .arg(Arg::from_usage("-r, --remote [host:port]            'host:port of server to connect (brace with [] for bare IPv6)'"))
+        .arg(Arg::from_usage("-r, --remote... [host:port]         'host:port of servers to connect (brace with [] for bare IPv6)'"))
         .arg(Arg::from_usage("-n, --ifname [ifname]               'virtual interface name'"))
         .arg(Arg::from_usage( "-m, --mtu [mtu]             'mtu size'").default_value(&default_mtu))
         .arg(Arg::from_usage("-a, --ipv4-addr [tun_lip/prf_len]   'pointopoint IPv4 pair of the virtual interface'"))
@@ -61,7 +61,14 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
             .map_err(|_| Error::InvalidArg("invalid listen address".into()))?;
     }
 
-    config.server_addr = matches.value_of("remote").map(Into::into);
+    if let Some(addrs) = matches.values_of("remote") {
+        let mut server_addrs = Vec::new();
+        for r in addrs {
+            server_addrs.push(r.to_owned());
+        }
+
+        config.server_addrs = Some(server_addrs);
+    };
 
     #[cfg(feature = "holepunch")]
     if matches.is_present("rndz-server") {

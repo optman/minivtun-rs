@@ -32,7 +32,7 @@ pub struct Config<'a> {
     pub loc_tun_in: Option<Ipv4Net>,
     pub loc_tun_in6: Option<Ipv6Net>,
     pub listen_addr: Option<SocketAddr>,
-    pub server_addr: Option<String>,
+    pub server_addrs: Option<Vec<String>>,
     pub cryptor: Option<Box<dyn cryptor::Cryptor>>,
     pub daemonize: bool,
     pub routes: Vec<(IpNet, Option<IpAddr>)>,
@@ -87,7 +87,10 @@ impl<'a> Config<'a> {
     }
 
     pub fn with_server_addr(&mut self, addr: String) -> &mut Self {
-        self.server_addr = Some(addr);
+        if self.server_addrs.is_none() {
+            self.server_addrs = Some(Vec::new());
+        }
+        self.server_addrs.as_mut().unwrap().push(addr);
         self
     }
 

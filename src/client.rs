@@ -29,6 +29,7 @@ pub struct Client<'a> {
     state: State,
     tun: Fd,
     last_rebind: Option<Instant>,
+    server_index: usize,
 }
 
 impl<'a> Client<'a> {
@@ -49,11 +50,17 @@ impl<'a> Client<'a> {
             tun,
             state: Default::default(),
             last_rebind: None,
+            server_index: 0,
         })
     }
 
     pub fn run(mut self) -> Result {
-        if let Some(ref server_addr) = self.config.server_addr {
+        if let Some(ref server_addr) = self
+            .config
+            .server_addrs
+            .as_ref()
+            .map(|addrs| &addrs[self.server_index])
+        {
             let _ = self.socket.connect(server_addr);
         }
         self.state.last_connect = Some(Instant::now());
@@ -120,8 +127,9 @@ impl<'a> Display for Client<'a> {
             "{:<15} {:}",
             "server_addr:",
             self.config
-                .server_addr
-                .clone()
+                .server_addrs
+                .as_ref()
+                .map(|addrs| addrs[self.server_index].clone())
                 .or(self.socket.peer_addr().map(|v| v.to_string()).ok())
                 .unwrap_or("NA".to_string())
         )?;
@@ -279,7 +287,13 @@ impl<'a> poll::Reactor for Client<'a> {
                     }
 
                     self.state.last_connect = Some(Instant::now());
-                    if let Some(ref server_addr) = self.config.server_addr {
+
+                    if let Some(ref server_addrs) = self.config.server_addrs {
+                        self.server_index += 1;
+                        if self.server_index >= server_addrs.len() {
+                            self.server_index = 0;
+                        }
+                        let server_addr = &server_addrs[self.server_index];
                         let _ = self
                             .socket
                             .connect(server_addr)

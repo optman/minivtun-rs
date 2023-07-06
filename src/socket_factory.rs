@@ -12,7 +12,7 @@ use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::thread;
 
 pub fn choose_bind_addr(
-    server_addr: &Option<String>,
+    server_addr: Option<&String>,
     config: &Config,
     wait_dns: bool,
 ) -> Result<SocketAddr, Error> {
@@ -61,7 +61,11 @@ pub fn native_socket_factory() -> Box<dyn Fn(&Config, bool) -> Result<Socket, Er
     let socket_factory = |config: &Config, wait_dns: bool| -> Result<Socket, Error> {
         let bind_addr = match config.listen_addr {
             Some(addr) => addr,
-            None => choose_bind_addr(&config.server_addr, config, wait_dns)?,
+            None => choose_bind_addr(
+                config.server_addrs.as_ref().unwrap().first(),
+                config,
+                wait_dns,
+            )?,
         };
         let mut socket = UdpSocket::bind(bind_addr).expect("listen address bind fail.");
 
