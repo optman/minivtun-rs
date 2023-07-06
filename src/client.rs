@@ -182,6 +182,14 @@ impl<'a> Display for Client<'a> {
         writeln!(
             f,
             "{:<15} {:}",
+            "last_rx:",
+            state
+                .last_rx
+                .map_or("Never".to_string(), |v| format!("{:.0?} ago", v.elapsed()))
+        )?;
+        writeln!(
+            f,
+            "{:<15} {:}",
             "rx:",
             Size::from_bytes(state.rx_bytes).to_string()
         )?;
@@ -235,6 +243,7 @@ impl<'a> poll::Reactor for Client<'a> {
                     self.state.last_ack = Some(Instant::now());
                 }
                 Ok(Op::IpData) => {
+                    self.state.last_rx = Some(Instant::now());
                     self.forward_local(ipdata::Packet::new(msg.payload()?)?.payload()?)?;
                 }
                 Ok(Op::EchoReq) => {
@@ -259,7 +268,11 @@ impl<'a> poll::Reactor for Client<'a> {
                 Instant::now().duration_since(last_ack) > self.config.reconnect_timeout
             });
 
-            if ack_timeout {
+            let rx_timeout = self.state.last_rx.map_or(true, |last_rx| {
+                Instant::now().duration_since(last_rx) > self.config.reconnect_timeout
+            });
+
+            if ack_timeout && rx_timeout {
                 let reconnect = self.state.last_connect.map_or(true, |last_connect| {
                     Instant::now().duration_since(last_connect) > self.config.reconnect_timeout
                 });
