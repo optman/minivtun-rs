@@ -35,7 +35,7 @@ pub fn dest_ip(pkt: &[u8]) -> Result<IpAddr> {
 }
 
 pub fn build_server_addr(addr: &str) -> String {
-    let mut parts = addr.rsplit(':');
+    let mut parts = addr.rsplitn(2, ':');
     let port = parts.next().unwrap();
     let host = parts.next().unwrap();
 
