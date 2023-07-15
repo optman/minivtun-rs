@@ -7,6 +7,7 @@ use crate::{
     msg::{builder::Builder, ipdata, ipdata::Kind},
     socket::Socket,
     state::State,
+    util::build_server_addr,
 };
 use log::{debug, info, trace, warn};
 use size::Size;
@@ -55,13 +56,13 @@ impl<'a> Client<'a> {
     }
 
     pub fn run(mut self) -> Result {
-        if let Some(ref server_addr) = self
+        if let Some(server_addr) = self
             .config
             .server_addrs
             .as_ref()
             .map(|addrs| &addrs[self.server_index])
         {
-            let _ = self.socket.connect(server_addr);
+            let _ = self.socket.connect(build_server_addr(server_addr));
         }
         self.state.last_connect = Some(Instant::now());
 
@@ -126,11 +127,10 @@ impl<'a> Display for Client<'a> {
             f,
             "{:<15} {:}",
             "server_addr:",
-            self.config
-                .server_addrs
-                .as_ref()
-                .map(|addrs| addrs[self.server_index].clone())
-                .or(self.socket.peer_addr().map(|v| v.to_string()).ok())
+            self.socket
+                .peer_addr()
+                .map(|v| v.to_string())
+                .ok()
                 .unwrap_or("NA".to_string())
         )?;
         writeln!(
@@ -309,7 +309,7 @@ impl<'a> poll::Reactor for Client<'a> {
                         let server_addr = &server_addrs[self.server_index];
                         let _ = self
                             .socket
-                            .connect(server_addr)
+                            .connect(build_server_addr(server_addr))
                             .map_err(|e| warn!("{:?}", e));
                     }
                 }

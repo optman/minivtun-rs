@@ -224,7 +224,7 @@ fn create_rndz_svr_sk(config: &Config, wait_dns: bool) -> Result<UdpSocket, Erro
     let bind_addr = match config.listen_addr {
         Some(addr) => addr,
         None => choose_bind_addr(
-            config.rndz.as_ref().unwrap().server.as_ref(),
+            config.rndz.as_ref().unwrap().server.as_deref(),
             config,
             wait_dns,
         )?,

@@ -1,4 +1,5 @@
 use crate::error::{Error, Result};
+use rand::Rng;
 use std::net::IpAddr;
 
 #[inline]
@@ -31,4 +32,24 @@ pub fn dest_ip(pkt: &[u8]) -> Result<IpAddr> {
         6 => Ok(ipv6_from_slice(&pkt[24..])),
         _ => Err(Error::InvalidPacket),
     }
+}
+
+pub fn build_server_addr(addr: &str) -> String {
+    let mut parts = addr.rsplit(':');
+    let port = parts.next().unwrap();
+    let host = parts.next().unwrap();
+
+    let mut ports = port.split('-');
+    let gen_addr = if let Some(start_port) = ports.next().map(|v| v.parse::<u16>().unwrap()) {
+        if let Some(end_port) = ports.next().map(|v| v.parse::<u16>().unwrap()) {
+            let port: u16 = rand::thread_rng().gen_range(start_port, end_port);
+            Some(format!("{:}:{:}", host, port))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    gen_addr.unwrap_or(addr.to_owned())
 }
