@@ -131,6 +131,7 @@ impl RouteTable {
         self.get_rt_route(va)
     }
 
+    #[allow(dead_code)]
     pub fn update_va(&mut self, va: &IpAddr, addr: &SocketAddr) -> bool {
         let Self { va_map, ra_map, .. } = self;
         if let Some(v) = va_map.get_mut(va) {

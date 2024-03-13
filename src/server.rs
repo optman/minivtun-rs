@@ -80,7 +80,7 @@ impl<'a> Server<'a> {
             None => Err(crate::error::Error::NoRoute(dst.to_string()))?,
         };
 
-        let mut stat = self.stats.entry(dst).or_default();
+        let stat = self.stats.entry(dst).or_default();
         stat.tx_bytes += pkt.len() as u64;
 
         let buf = msg::Builder::default()
@@ -97,12 +97,12 @@ impl<'a> Server<'a> {
 
     fn forward_local(&mut self, ra: &SocketAddr, pkt: &[u8]) -> Result {
         let src = source_ip(pkt)?;
-        if !self.rt.update_va(&src, ra) {
+        let ra = self.rt.get_or_add_ra(ra).clone();
+        if self.rt.add_or_update_va(&src, ra).is_none() {
             debug!("unknown src {:}", src);
             return Ok(());
         }
-
-        let mut stat = self.stats.entry(src).or_default();
+        let stat = self.stats.entry(src).or_default();
         stat.rx_bytes += pkt.len() as u64;
 
         match pkt[0] >> 4 {
