@@ -59,7 +59,7 @@ impl<'a> Finalization<'a> {
 
     /// Add a serie of finalizers.
     pub fn extend<I: IntoIterator<Item = &'a dyn Finalizer>>(&mut self, finalizers: I) {
-        self.0.extend(finalizers.into_iter());
+        self.0.extend(finalizers);
     }
 
     /// Finalize a buffer.
