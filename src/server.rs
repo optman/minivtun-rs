@@ -57,7 +57,7 @@ impl<'a> Server<'a> {
             tun,
             stats: Default::default(),
             rt: Default::default(),
-            last_rebind: None,
+            last_rebind: Some(Instant::now()),
             last_health: None,
         })
     }
@@ -287,7 +287,7 @@ impl<'a> poll::Reactor for Server<'a> {
                 | self
                     .last_health
                     .map(|l| l.elapsed() > rebind_timeout)
-                    .unwrap_or(false))
+                    .unwrap_or(true))
             && self
                 .last_rebind
                 .map(|l| l.elapsed() > rebind_timeout)
