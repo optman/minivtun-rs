@@ -4,6 +4,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
+    TunInitialization(tun::Error),
     InvalidArg(String),
     InvalidPacket,
     EncryptFail,

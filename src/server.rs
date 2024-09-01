@@ -66,7 +66,7 @@ impl<'a> Server<'a> {
         for (net, gw) in &self.config.routes {
             match gw {
                 Some(gw) => self.rt.add_route(net, gw),
-                None => Err("route gw must be set in server mode!")?,
+                None => return Err("route gw must be set in server mode!".into()),
             }
         }
 
@@ -75,10 +75,10 @@ impl<'a> Server<'a> {
 
     fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result {
         let dst = dest_ip(pkt)?;
-        let va = match self.rt.get_route(&dst) {
-            Some(va) => va,
-            None => Err(crate::error::Error::NoRoute(dst.to_string()))?,
-        };
+        let va = self
+            .rt
+            .get_route(&dst)
+            .ok_or_else(|| crate::error::Error::NoRoute(dst.to_string()))?;
 
         let stat = self.stats.entry(dst).or_default();
         stat.tx_bytes += pkt.len() as u64;
@@ -91,7 +91,9 @@ impl<'a> Server<'a> {
             .payload(pkt)?
             .build()?;
 
+        // ignore failure
         let _ = self.socket.send_to(&buf, va.ra.addr());
+
         Ok(())
     }
 
@@ -107,10 +109,11 @@ impl<'a> Server<'a> {
 
         match pkt[0] >> 4 {
             4 | 6 => {
+                // ignore failure
                 let _ = self.tun.write(pkt)?;
             }
             _ => {
-                debug!("[FWD]invalid packet!")
+                debug!("[FWD] invalid packet!")
             }
         }
 
@@ -148,11 +151,13 @@ impl<'a> Server<'a> {
 
         let buf = builder.build()?;
 
+        // ignore failure
         let _ = self.socket.send_to(&buf, src);
 
         Ok(())
     }
 }
+
 impl<'a> Display for Server<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         writeln!(f, "server mode")?;
@@ -218,23 +223,26 @@ impl<'a> poll::Reactor for Server<'a> {
     fn socket_fd(&self) -> RawFd {
         self.socket.as_raw_fd()
     }
+
     fn tunnel_recv(&mut self) -> Result {
         let mut buf =
             unsafe { mem::MaybeUninit::assume_init(mem::MaybeUninit::<[u8; 1500]>::uninit()) };
         let size = self.tun.read(&mut buf)?;
         match buf[0] >> 4 {
             4 => {
+                // ignore failure
                 let _ = self
                     .forward_remote(Kind::V4, &buf[..size])
                     .map_err(|e| debug!("forward remote fail. {:?}", e));
             }
             6 => {
+                // ignore failure
                 let _ = self
                     .forward_remote(Kind::V6, &buf[..size])
                     .map_err(|e| debug!("forward remote fail. {:?}", e));
             }
             _ => {
-                warn!("[INPUT]invalid packet");
+                warn!("[INPUT] invalid packet");
             }
         }
 
@@ -251,7 +259,7 @@ impl<'a> poll::Reactor for Server<'a> {
             }
         };
 
-        trace!("receive from  {:}, size {:}", src, size);
+        trace!("receive from {:}, size {:}", src, size);
         match msg::Packet::<&[u8]>::with_cryptor(&mut buf[..size], &self.config.cryptor) {
             Ok(msg) => match msg.op() {
                 Ok(Op::IpData) => {
@@ -284,7 +292,7 @@ impl<'a> poll::Reactor for Server<'a> {
 
         if rebind
             && (self.socket.is_stale()
-                | self
+                || self
                     .last_health
                     .map(|l| l.elapsed() > rebind_timeout)
                     .unwrap_or(true))
@@ -303,7 +311,7 @@ impl<'a> poll::Reactor for Server<'a> {
                         self.socket = socket;
                     }
                     Err(e) => {
-                        warn!("rebind fail.{:} ", e);
+                        warn!("rebind fail. {:}", e);
                     }
                 }
             }
@@ -311,7 +319,7 @@ impl<'a> poll::Reactor for Server<'a> {
 
         if let Some(last_health) = self.socket.last_health() {
             self.last_health = Some(last_health);
-        };
+        }
 
         let Self { rt, stats, .. } = self;
 
@@ -322,6 +330,7 @@ impl<'a> poll::Reactor for Server<'a> {
 
     fn handle_control_connection(&mut self, fd: RawFd) {
         let mut us = unsafe { UnixStream::from_raw_fd(fd) };
+        // ignore failure
         let _ = us.write(self.to_string().as_bytes());
     }
 }

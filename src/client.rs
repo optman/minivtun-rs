@@ -22,54 +22,59 @@ use tun::platform::posix::Fd;
 
 extern crate libc;
 
-type Result = std::result::Result<(), Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub struct Client<'a> {
     config: Config<'a>,
     socket: Socket,
     state: State,
     tun: Fd,
-    last_rebind: Option<Instant>,
     server_index: usize,
 }
 
 impl<'a> Client<'a> {
-    pub fn new(mut config: Config<'a>) -> std::result::Result<Self, Error> {
-        let socket = match config.socket.take() {
-            Some(socket) => socket,
-            None => config
-                .socket_factory
-                .as_ref()
-                .expect("neither socket nor socket_factory is set")(
-                &config, config.wait_dns
-            )?,
-        };
-        let tun = Fd::new(config.tun_fd).unwrap();
+    pub fn new(mut config: Config<'a>) -> Result<Self> {
+        let socket = config.socket.take().map_or_else(
+            || {
+                config
+                    .socket_factory
+                    .as_ref()
+                    .expect("neither socket nor socket_factory is set")(
+                    &config, config.wait_dns
+                )
+            },
+            |v| Ok(v),
+        )?;
+
+        let tun = Fd::new(config.tun_fd).map_err(|e| Error::TunInitialization(e))?;
         Ok(Self {
             config,
             socket,
             tun,
             state: Default::default(),
-            last_rebind: None,
             server_index: 0,
         })
     }
 
-    pub fn run(mut self) -> Result {
+    pub fn run(mut self) -> Result<()> {
         if let Some(server_addr) = self
             .config
             .server_addrs
             .as_ref()
-            .map(|addrs| &addrs[self.server_index])
+            .and_then(|addrs| addrs.get(self.server_index))
         {
-            let _ = self.socket.connect(build_server_addr(server_addr));
+            //ignore failure
+            let _ = self
+                .socket
+                .connect(build_server_addr(server_addr))
+                .map_err(|e| warn!("{:?}", e));
         }
         self.state.last_connect = Some(Instant::now());
 
         poll::poll(self.tun.as_raw_fd(), self.config.control_fd, self)
     }
 
-    fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result {
+    fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result<()> {
         self.state.tx_bytes += pkt.len() as u64;
 
         let buf = msg::Builder::default()
@@ -80,26 +85,27 @@ impl<'a> Client<'a> {
             .payload(pkt)?
             .build()?;
 
+        //ignore failure
         let _ = self.socket.send(&buf);
+
         Ok(())
     }
 
-    fn forward_local(&mut self, pkt: &[u8]) -> Result {
+    fn forward_local(&mut self, pkt: &[u8]) -> Result<()> {
         self.state.rx_bytes += pkt.len() as u64;
 
         match pkt[0] >> 4 {
             4 | 6 => {
-                let _ = self.tun.write(pkt)?;
+                //ignore failure
+                let _ = self.tun.write(pkt);
             }
-            _ => {
-                debug!("[FWD]invalid packet!")
-            }
+            _ => debug!("[FWD]invalid packet!"),
         }
 
         Ok(())
     }
 
-    fn send_echo(&mut self) -> Result {
+    fn send_echo(&mut self) -> Result<()> {
         let mut builder = msg::Builder::default()
             .cryptor(&self.config.cryptor)?
             .seq(self.state.next_seq())?
@@ -114,6 +120,7 @@ impl<'a> Client<'a> {
             builder = builder.ipv6_addr(addr6.addr())?;
         }
 
+        //ignore failure
         let _ = self.socket.send(builder.build()?.as_ref());
 
         Ok(())
@@ -125,80 +132,70 @@ impl<'a> Display for Client<'a> {
         writeln!(f, "client mode")?;
         writeln!(
             f,
-            "{:<15} {:}",
+            "{:<15} {}",
             "server_addr:",
             self.socket
                 .peer_addr()
                 .map(|v| v.to_string())
-                .ok()
-                .unwrap_or("NA".to_string())
+                .unwrap_or_else(|_| "NA".to_string())
         )?;
         writeln!(
             f,
-            "{:<15} {:}",
+            "{:<15} {}",
             "local_addr:",
             self.socket.local_addr().unwrap()
         )?;
         if let Some(ipv4) = self.config.loc_tun_in {
-            writeln!(f, "{:<15} {:}", "ipv4:", ipv4)?;
+            writeln!(f, "{:<15} {}", "ipv4:", ipv4)?;
         }
         if let Some(ipv6) = self.config.loc_tun_in6 {
-            writeln!(f, "{:<15} {:}", "ipv6:", ipv6)?;
+            writeln!(f, "{:<15} {}", "ipv6:", ipv6)?;
         }
 
         #[cfg(feature = "holepunch")]
         if let Some(ref rndz) = self.config.rndz {
             writeln!(
                 f,
-                "{:<15} {:}",
+                "{:<15} {}",
                 "rndz_server:",
-                rndz.server.as_ref().unwrap_or(&"".to_owned())
+                rndz.server.as_deref().unwrap_or("")
             )?;
             writeln!(
                 f,
-                "{:<15} {:}",
+                "{:<15} {}",
                 "rndz_local:",
-                rndz.local_id.as_ref().unwrap_or(&"".to_owned())
+                rndz.local_id.as_deref().unwrap_or("")
             )?;
             writeln!(
                 f,
-                "{:<15} {:}",
+                "{:<15} {}",
                 "rndz_remote:",
-                rndz.remote_id.as_ref().unwrap_or(&"".to_owned())
+                rndz.remote_id.as_deref().unwrap_or("")
             )?;
         }
 
         writeln!(f, "stats:")?;
-
         let state = &self.state;
         writeln!(
             f,
-            "{:<15} {:}",
+            "{:<15} {}",
             "last_ack:",
-            state
-                .last_ack
-                .map_or("Never".to_string(), |v| format!("{:.0?} ago", v.elapsed()))
+            state.last_ack.map_or_else(
+                || "Never".to_string(),
+                |v| format!("{:.0?} ago", v.elapsed())
+            )
         )?;
         writeln!(
             f,
-            "{:<15} {:}",
+            "{:<15} {}",
             "last_rx:",
-            state
-                .last_rx
-                .map_or("Never".to_string(), |v| format!("{:.0?} ago", v.elapsed()))
+            state.last_rx.map_or_else(
+                || "Never".to_string(),
+                |v| format!("{:.0?} ago", v.elapsed())
+            )
         )?;
-        writeln!(
-            f,
-            "{:<15} {:}",
-            "rx:",
-            Size::from_bytes(state.rx_bytes).to_string()
-        )?;
-        writeln!(
-            f,
-            "{:<15} {:}",
-            "tx:",
-            Size::from_bytes(state.tx_bytes).to_string()
-        )?;
+        writeln!(f, "{:<15} {}", "rx:", Size::from_bytes(state.rx_bytes))?;
+        writeln!(f, "{:<15} {}", "tx:", Size::from_bytes(state.tx_bytes))?;
         Ok(())
     }
 }
@@ -208,124 +205,107 @@ impl<'a> poll::Reactor for Client<'a> {
         self.socket.as_raw_fd()
     }
 
-    fn tunnel_recv(&mut self) -> Result {
+    fn tunnel_recv(&mut self) -> Result<()> {
         let mut buf = unsafe { MaybeUninit::assume_init(MaybeUninit::<[u8; 1500]>::uninit()) };
         let size = self.tun.read(&mut buf)?;
         match buf[0] >> 4 {
-            4 => {
-                self.forward_remote(Kind::V4, &buf[..size])?;
-            }
-            6 => {
-                self.forward_remote(Kind::V6, &buf[..size])?;
-            }
-            _ => {
-                warn!("[INPUT]invalid packet");
-            }
+            4 => self.forward_remote(Kind::V4, &buf[..size])?,
+            6 => self.forward_remote(Kind::V6, &buf[..size])?,
+            _ => warn!("[INPUT]invalid packet"),
         }
 
         Ok(())
     }
 
-    fn network_recv(&mut self) -> Result {
+    fn network_recv(&mut self) -> Result<()> {
         let mut buf = unsafe { MaybeUninit::assume_init(MaybeUninit::<[u8; 1500]>::uninit()) };
-        let (size, src) = match self.socket.recv_from(&mut buf) {
-            Ok((size, src)) => (size, src),
+        match self.socket.recv_from(&mut buf) {
+            Ok((size, src)) => {
+                trace!("receive from  {:}, size {:}", src, size);
+                match msg::Packet::<&[u8]>::with_cryptor(&mut buf[..size], &self.config.cryptor) {
+                    Ok(msg) => match msg.op() {
+                        Ok(Op::EchoAck) => {
+                            debug!("received echo ack");
+                            self.state.last_ack = Some(Instant::now());
+                        }
+                        Ok(Op::IpData) => {
+                            self.state.last_rx = Some(Instant::now());
+                            self.forward_local(ipdata::Packet::new(msg.payload()?)?.payload()?)?;
+                        }
+                        Ok(Op::EchoReq) => {
+                            debug!("received echo req(from old version server?)");
+                            self.state.last_ack = Some(Instant::now());
+                        }
+                        _ => debug!("unexpected msg {:?}", msg.op()),
+                    },
+                    _ => trace!("invalid packet"),
+                }
+            }
             Err(e) => {
                 debug!("recv from server fail. {:?}", e);
-                return Ok(());
-            }
-        };
-        trace!("receive from  {:}, size {:}", src, size);
-        match msg::Packet::<&[u8]>::with_cryptor(&mut buf[..size], &self.config.cryptor) {
-            Ok(msg) => match msg.op() {
-                Ok(Op::EchoAck) => {
-                    debug!("received echo ack");
-                    self.state.last_ack = Some(Instant::now());
-                }
-                Ok(Op::IpData) => {
-                    self.state.last_rx = Some(Instant::now());
-                    self.forward_local(ipdata::Packet::new(msg.payload()?)?.payload()?)?;
-                }
-                Ok(Op::EchoReq) => {
-                    debug!("received echo req(from old version server?)");
-                    self.state.last_ack = Some(Instant::now());
-                }
-                _ => {
-                    debug!("unexpected msg {:?}", msg.op());
-                }
-            },
-            _ => {
-                trace!("invalid packet")
             }
         }
-
         Ok(())
     }
 
-    fn keepalive(&mut self) -> Result {
-        if !self.config.reconnect_timeout.is_zero() {
-            let ack_timeout = self.state.last_ack.map_or(true, |last_ack| {
-                Instant::now().duration_since(last_ack) > self.config.reconnect_timeout
-            });
+    fn keepalive(&mut self) -> Result<()> {
+        let check_timeout = |last_event: Option<Instant>, timeout: &std::time::Duration| -> bool {
+            last_event.map_or(true, |event| {
+                Instant::now().duration_since(event) > *timeout
+            })
+        };
 
-            let rx_timeout = self.state.last_rx.map_or(true, |last_rx| {
-                Instant::now().duration_since(last_rx) > self.config.reconnect_timeout
-            });
+        let Config {
+            rebind,
+            reconnect_timeout,
+            rebind_timeout,
+            keepalive_interval,
+            ..
+        } = self.config;
 
-            if ack_timeout && rx_timeout {
-                let reconnect = self.state.last_connect.map_or(true, |last_connect| {
-                    Instant::now().duration_since(last_connect) > self.config.reconnect_timeout
-                });
+        let State {
+            last_rebind,
+            last_connect,
+            last_ack,
+            last_rx,
+            last_echo,
+            ..
+        } = self.state;
 
-                if reconnect {
-                    if self.config.rebind
-                        && self
-                            .last_rebind
-                            .map(|l| l.elapsed() > self.config.rebind_timeout)
-                            .unwrap_or(true)
-                    {
-                        info!("Rebind...");
-                        self.last_rebind = Some(Instant::now());
-                        if let Some(ref factory) = self.config.socket_factory {
-                            match factory(&self.config, false) {
-                                Ok(socket) => {
-                                    debug!("rebind to {:}", socket.local_addr().unwrap());
-                                    self.socket = socket
-                                }
-                                Err(e) => warn!("rebind fail, {:}", e),
-                            }
+        if check_timeout(last_ack, &reconnect_timeout)
+            && check_timeout(last_rx, &reconnect_timeout)
+            && check_timeout(last_connect, &reconnect_timeout)
+        {
+            if rebind && check_timeout(last_rebind, &rebind_timeout) {
+                info!("Rebind...");
+                self.state.last_rebind = Some(Instant::now());
+                if let Some(ref factory) = self.config.socket_factory {
+                    match factory(&self.config, false) {
+                        Ok(socket) => {
+                            debug!("rebind to {:}", socket.local_addr()?);
+                            self.socket = socket;
                         }
-                    } else {
-                        info!("Reconnect...");
-                    }
-
-                    self.state.last_connect = Some(Instant::now());
-
-                    if let Some(ref server_addrs) = self.config.server_addrs {
-                        self.server_index += 1;
-                        if self.server_index >= server_addrs.len() {
-                            self.server_index = 0;
-                        }
-                        let server_addr = &server_addrs[self.server_index];
-                        let _ = self
-                            .socket
-                            .connect(build_server_addr(server_addr))
-                            .map_err(|e| warn!("{:?}", e));
+                        Err(e) => warn!("rebind fail, {:}", e),
                     }
                 }
             };
+
+            info!("Reconnect...");
+            self.state.last_connect = Some(Instant::now());
+            if let Some(server_addrs) = &self.config.server_addrs {
+                self.server_index = (self.server_index + 1) % server_addrs.len();
+                let server_addr = &server_addrs[self.server_index];
+                //ignore failure
+                let _ = self
+                    .socket
+                    .connect(build_server_addr(server_addr))
+                    .map_err(|e| warn!("{:?}", e));
+            }
         }
 
-        if !self.config.keepalive_interval.is_zero() {
-            match self.state.last_echo {
-                Some(last_echo)
-                    if Instant::now().duration_since(last_echo)
-                        < self.config.keepalive_interval => {}
-                _ => {
-                    self.state.last_echo = Some(Instant::now());
-                    self.send_echo()?;
-                }
-            }
+        if check_timeout(last_echo, &keepalive_interval) {
+            self.state.last_echo = Some(Instant::now());
+            self.send_echo()?;
         }
 
         Ok(())
@@ -333,6 +313,7 @@ impl<'a> poll::Reactor for Client<'a> {
 
     fn handle_control_connection(&mut self, fd: RawFd) {
         let mut us = unsafe { UnixStream::from_raw_fd(fd) };
+        //ignore failure
         let _ = us.write(self.to_string().as_bytes());
     }
 }

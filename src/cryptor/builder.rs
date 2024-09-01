@@ -1,14 +1,15 @@
 use crate::cryptor::{Aes128Cryptor, Aes256Cryptor, Cryptor};
 use md5::{Digest, Md5};
 
+/// Converts a secret string into a 16-byte key using MD5
 pub fn secret_to_key<T: AsRef<str>>(secret: T) -> [u8; 16] {
     let mut d = Md5::default();
     d.update(secret.as_ref().as_bytes());
-
     let key = d.finalize();
     *key.as_ref()
 }
 
+/// Enum representing different cipher algorithms
 #[derive(Clone)]
 pub enum Cipher {
     Plain,
@@ -16,6 +17,7 @@ pub enum Cipher {
     Aes256,
 }
 
+/// Builder for constructing cryptors
 #[derive(Clone)]
 pub struct Builder {
     key: [u8; 16],
@@ -32,10 +34,12 @@ impl Default for Builder {
 }
 
 impl Builder {
+    /// Creates a new Builder instance with the provided secret and cipher type
     pub fn new<A: AsRef<str>, B: AsRef<str>>(
         secret: A,
         cipher: B,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        
         let cipher = match cipher.as_ref() {
             "plain" => Cipher::Plain,
             "aes-128" => Cipher::Aes128,
@@ -48,6 +52,8 @@ impl Builder {
             key: secret_to_key(secret),
         })
     }
+
+    /// Builds a cryptor based on the configured cipher type
     pub fn build(&self) -> Option<Box<dyn Cryptor>> {
         match self.cipher {
             Cipher::Plain => None,

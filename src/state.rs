@@ -2,6 +2,7 @@ use rand::{thread_rng, Rng};
 use std::time;
 
 pub struct State {
+    pub last_rebind: Option<time::Instant>,
     pub last_ack: Option<time::Instant>,
     pub last_connect: Option<time::Instant>,
     pub last_echo: Option<time::Instant>,
@@ -14,6 +15,7 @@ pub struct State {
 impl Default for State {
     fn default() -> Self {
         Self {
+            last_rebind: None,
             last_ack: None,
             last_connect: None,
             last_echo: None,

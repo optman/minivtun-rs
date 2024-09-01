@@ -15,17 +15,21 @@ impl RndzSocket {
         let rndz = rndz::Client::new(server, id, local_addr)?;
         Self::_new(rndz)
     }
+
     pub fn new_with_socket(server: &str, id: &str, svr_sk: UdpSocket) -> Result<Self> {
         let rndz = rndz::Client::new_with_socket(server, id, svr_sk)?;
         Self::_new(rndz)
     }
+
     fn _new(rndz: rndz::Client) -> Result<Self> {
         Ok(Self { rndz, socket: None })
     }
+
     pub fn connect(&mut self, target_id: &str) -> Result<()> {
         self.socket = Some(self.rndz.connect(target_id)?);
         Ok(())
     }
+
     pub fn listen(&mut self) -> Result<()> {
         self.socket = Some(self.rndz.listen()?);
         Ok(())
@@ -35,13 +39,13 @@ impl RndzSocket {
 impl Deref for RndzSocket {
     type Target = UdpSocket;
     fn deref(&self) -> &Self::Target {
-        self.socket.as_ref().unwrap()
+        self.socket.as_ref().expect("Socket is not connected")
     }
 }
 
 impl DerefMut for RndzSocket {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.socket.as_mut().unwrap()
+        self.socket.as_mut().expect("Socket is not connected")
     }
 }
 

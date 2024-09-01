@@ -1,13 +1,17 @@
-use ipnet::IpNet;
-use log::{debug, info};
-use rand::{thread_rng, Rng};
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
-use std::net::{IpAddr, SocketAddr};
-use std::num::Wrapping;
-use std::rc::Rc;
-use std::time::{Duration, Instant};
+use {
+    ipnet::IpNet,
+    log::{debug, info},
+    rand::{thread_rng, Rng},
+    std::{
+        cell::RefCell,
+        collections::HashMap,
+        fmt::{Display, Formatter},
+        net::{IpAddr, SocketAddr},
+        num::Wrapping,
+        rc::Rc,
+        time::{Duration, Instant},
+    },
+};
 
 #[derive(Clone)]
 pub struct RealAddr {
@@ -25,6 +29,7 @@ impl RealAddr {
         }
     }
 
+    // Increments and returns the next sequence number.
     pub fn next_seq(&mut self) -> u16 {
         self.xmit_seq += Wrapping(1u16);
         self.xmit_seq.0
@@ -81,14 +86,17 @@ pub struct RouteTable {
 }
 
 impl RouteTable {
+    // Checks if a virtual address is in the table.
     pub fn contains(&self, va: &IpAddr) -> bool {
         self.va_map.contains_key(va)
     }
 
+    // Adds a new route to the route table.
     pub fn add_route(&mut self, net: &IpNet, gw: &IpAddr) {
         self.vt_routes.push((*net, *gw));
     }
 
+    // Retrieves or adds a real address to the map.
     pub fn get_or_add_ra(&mut self, addr: &SocketAddr) -> &RefRA {
         self.ra_map
             .entry(*addr)
@@ -99,6 +107,7 @@ impl RouteTable {
             })
     }
 
+    // Adds or updates a virtual address.
     pub fn add_or_update_va(&mut self, va: &IpAddr, ra: RefRA) -> Option<&VirtualAddr> {
         if va.is_unspecified() {
             return None;
@@ -122,6 +131,7 @@ impl RouteTable {
         Some(va)
     }
 
+    // Retrieves a route for a virtual address.
     pub fn get_route(&mut self, va: &IpAddr) -> Option<&VirtualAddr> {
         //https://github.com/rust-lang/rfcs/blob/master/text/2094-nll.md#problem-case-3-conditional-control-flow-across-functions
         if self.va_map.contains_key(va) {
@@ -150,6 +160,7 @@ impl RouteTable {
         }
     }
 
+    // Retrieves a route table route for a virtual address.
     pub fn get_rt_route(&mut self, va: &IpAddr) -> Option<&VirtualAddr> {
         let mut gw_ra: Option<RefRA> = None;
         for (net, gw) in &self.vt_routes {
@@ -164,6 +175,7 @@ impl RouteTable {
         gw_ra.and_then(move |ra| self.add_or_update_va(va, ra))
     }
 
+    // Prunes outdated entries from the route table.
     pub fn prune(&mut self, timeout: Duration) {
         let now = Instant::now();
         self.va_map.retain(|_, v| {

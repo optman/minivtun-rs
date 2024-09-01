@@ -55,20 +55,16 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
     let matches = app.get_matches();
 
     if let Some(local) = matches.value_of("local") {
-        config.listen_addr = local
-            .parse()
-            .map(Some)
-            .map_err(|_| Error::InvalidArg("invalid listen address".into()))?;
+        config.listen_addr = Some(
+            local
+                .parse()
+                .map_err(|_| Error::InvalidArg("invalid listen address".into()))?,
+        );
     }
 
     if let Some(addrs) = matches.values_of("remote") {
-        let mut server_addrs = Vec::new();
-        for r in addrs {
-            server_addrs.push(r.to_owned());
-        }
-
-        config.server_addrs = Some(server_addrs);
-    };
+        config.server_addrs = Some(addrs.map(String::from).collect());
+    }
 
     #[cfg(feature = "holepunch")]
     if matches.is_present("rndz-server") {
@@ -80,101 +76,98 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         });
     }
 
-    config.ifname = matches.value_of("ifname").or(Some("mv%d")).map(Into::into);
+    config.ifname = Some(matches.value_of("ifname").unwrap_or("mv%d").into());
+
     if let Some(v) = matches.value_of("mtu") {
         config.mtu = v
             .parse()
             .map_err(|_| Error::InvalidArg("invalid mtu".into()))?;
-    };
+    }
 
     if let Some(addr4) = matches.value_of("ipv4-addr") {
-        config.loc_tun_in = addr4
-            .parse()
-            .map(Some)
-            .map_err(|_| Error::InvalidArg("invalid local ipv4 address".into()))?;
-    }
-    if let Some(addr6) = matches.value_of("ipv6-addr") {
-        config.loc_tun_in6 = addr6
-            .parse()
-            .map(Some)
-            .map_err(|_| Error::InvalidArg("invalid local ipv6 address".into()))?;
+        config.loc_tun_in = Some(
+            addr4
+                .parse()
+                .map_err(|_| Error::InvalidArg("invalid local ipv4 address".into()))?,
+        );
     }
 
-    if let (Some(t), Some(key)) = (
-        matches.value_of("type").or(Some(DEFAULT_CIPHER)),
-        matches.value_of("key"),
-    ) {
+    if let Some(addr6) = matches.value_of("ipv6-addr") {
+        config.loc_tun_in6 = Some(
+            addr6
+                .parse()
+                .map_err(|_| Error::InvalidArg("invalid local ipv6 address".into()))?,
+        );
+    }
+
+    if let (Some(t), Some(key)) = (matches.value_of("type"), matches.value_of("key")) {
         config.cryptor = cryptor::Builder::new(key, t)
-            .map_err(|_| Error::InvalidArg("invalid encryption type ".into()))?
+            .map_err(|_| Error::InvalidArg("invalid encryption type".into()))?
             .build();
     }
 
     config.daemonize = matches.is_present("daemon");
 
     if let Some(routes) = matches.values_of("route") {
-        let f = || -> Result<(), Box<dyn std::error::Error>> {
-            for r in routes {
-                let mut parts = r.splitn(2, '=');
-                let net: IpNet = match parts.next() {
-                    Some(v) => v.parse()?,
-                    None => continue,
-                };
-                let gw: Option<IpAddr> = match parts.next() {
-                    Some(v) => Some(v.parse()?),
-                    None => None,
-                };
-
-                config.routes.push((net, gw));
-            }
-
-            Ok(())
-        };
-
-        f().map_err(|_| Error::InvalidArg("invalid route".into()))?
+        for r in routes {
+            let mut parts = r.splitn(2, '=');
+            let net: IpNet = parts
+                .next()
+                .ok_or(Error::InvalidArg("Invalid route network".into()))?
+                .parse()
+                .map_err(|_| Error::InvalidArg("invalid route".into()))?;
+            let gw: Option<IpAddr> = parts
+                .next()
+                .map(|gw| {
+                    gw.parse()
+                        .map_err(|_| Error::InvalidArg("invalid gateway".into()))
+                })
+                .transpose()?;
+            config.routes.push((net, gw));
+        }
     }
 
     if let Some(v) = matches.value_of("keepalive") {
-        config.keepalive_interval = v
-            .parse()
-            .map(Duration::from_secs)
-            .map_err(|_| Error::InvalidArg("keepalive".into()))?;
-    };
+        config.keepalive_interval = Duration::from_secs(
+            v.parse()
+                .map_err(|_| Error::InvalidArg("keepalive".into()))?,
+        );
+    }
 
     if let Some(v) = matches.value_of("reconnect-timeo") {
-        config.reconnect_timeout = v
-            .parse()
-            .map(Duration::from_secs)
-            .map_err(|_| Error::InvalidArg("reconnect-timeo".into()))?;
+        config.reconnect_timeout = Duration::from_secs(
+            v.parse()
+                .map_err(|_| Error::InvalidArg("reconnect-timeo".into()))?,
+        );
     }
 
     if let Some(v) = matches.value_of("rebind-timeo") {
-        config.rebind_timeout = v
-            .parse()
-            .map(Duration::from_secs)
-            .map_err(|_| Error::InvalidArg("rebind-timeo".into()))?;
+        config.rebind_timeout = Duration::from_secs(
+            v.parse()
+                .map_err(|_| Error::InvalidArg("rebind-timeo".into()))?,
+        );
     }
 
     if let Some(v) = matches.value_of("client-timeo") {
-        config.client_timeout = v
-            .parse()
-            .map(Duration::from_secs)
-            .map_err(|_| Error::InvalidArg("client-timeo".into()))?;
+        config.client_timeout = Duration::from_secs(
+            v.parse()
+                .map_err(|_| Error::InvalidArg("client-timeo".into()))?,
+        );
     }
 
     config.table = matches.value_of("table").map(Into::into);
     config.metric = matches.value_of("metric").map(Into::into);
 
     if let Some(fwmark) = matches.value_of("fwmark") {
-        config.fwmark = fwmark
-            .parse()
-            .map(Some)
-            .map_err(|_| Error::InvalidArg("invalid fwmark".into()))?;
-    };
+        config.fwmark = Some(
+            fwmark
+                .parse()
+                .map_err(|_| Error::InvalidArg("invalid fwmark".into()))?,
+        );
+    }
 
     config.wait_dns = matches.is_present("wait-dns");
-
     config.rebind = matches.is_present("rebind");
-
     config.info = matches.is_present("info");
 
     Ok(())

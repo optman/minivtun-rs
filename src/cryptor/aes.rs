@@ -7,12 +7,14 @@ use block_modes::{
 };
 use std::marker::PhantomData;
 
-//ZeroPadding code is copy from block_modes::block_padding::ZeroPadding
-//to modify uppad() method.
+// ZeroPadding code is copied from block_modes::block_padding::ZeroPadding
+// to modify the unpad() method.
 //
+// Enum representing zero-padding for block ciphers
 #[derive(Clone, Copy, Debug)]
 pub enum ZeroPadding {}
 
+/// Sets the provided slice with the given value
 #[inline(always)]
 fn set(dst: &mut [u8], value: u8) {
     unsafe {
@@ -23,7 +25,7 @@ fn set(dst: &mut [u8], value: u8) {
 impl Padding for ZeroPadding {
     fn pad_block(block: &mut [u8], pos: usize) -> Result<(), PadError> {
         if pos > block.len() {
-            Err(PadError)?
+            return Err(PadError);
         }
         set(&mut block[pos..], 0);
         Ok(())
@@ -36,7 +38,7 @@ impl Padding for ZeroPadding {
             let bs = block_size * (pos / block_size);
             let be = bs + block_size;
             if buf.len() < be {
-                Err(PadError)?
+                return Err(PadError);
             }
             Self::pad_block(&mut buf[bs..be], pos - bs)?;
             Ok(&mut buf[..be])
@@ -51,11 +53,13 @@ impl Padding for ZeroPadding {
 pub type Aes128Cryptor = AesCryptor<Aes128, ZeroPadding, Cbc<Aes128, ZeroPadding>, 16>;
 pub type Aes256Cryptor = AesCryptor<Aes256, ZeroPadding, Cbc<Aes256, ZeroPadding>, 32>;
 
+/// Initial vector for encryption
 const IV: [u8; 32] = [
     0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90,
     0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90,
 ];
 
+/// Structure representing an AES cryptor with a specific padding and block mode
 #[derive(Clone, Copy)]
 pub struct AesCryptor<C, P, T, const KEY_SIZE: usize> {
     auth_key: [u8; 16],
@@ -66,6 +70,7 @@ pub struct AesCryptor<C, P, T, const KEY_SIZE: usize> {
 }
 
 impl<C, P, T, const KEY_SIZE: usize> AesCryptor<C, P, T, KEY_SIZE> {
+    /// Creates a new instance of AesCryptor
     pub fn new(auth_key: &[u8; 16]) -> Self {
         let mut a = Self {
             auth_key: *auth_key,

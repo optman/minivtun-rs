@@ -1,7 +1,31 @@
 # minivtun-rs
-A Rust implementation of [minivtun](https://github.com/rssnsj/minivtun),  with hole punching supported by [rndz](https://github.com/optman/rndz).
 
-### Usage
+A Rust implementation of [minivtun](https://github.com/rssnsj/minivtun), with hole punching supported by [rndz](https://github.com/optman/rndz).
+
+## Table of Contents
+- [Introduction](#introduction)
+- [Features](#features)
+- [Usage](#usage)
+- [Quick Start](#quick-start)
+- [Hole Punching Setup Example](#hole-punching-setup-example)
+- [Building](#building)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Introduction
+
+`minivtun-rs` is a lightweight, minimalistic virtual tunneller written in Rust. It is designed to provide a simple and efficient solution for creating virtual network interfaces and tunnels, supporting both IPv4 and IPv6.
+
+## Features
+
+- Daemon mode for background operation
+- IPv4 and IPv6 support
+- Configurable keepalive mechanism
+- Data encryption with various options
+- Hole punching support via `rndz`
+
+## Usage
+
 ```
 minivtun-rs 0.1.5
 Mini virtual tunneller in non-standard protocol
@@ -39,33 +63,55 @@ OPTIONS:
                                              256]
 
 ```
-#### quick start
 
-server
+## Quick Start
+
+### Server
+
 ```
 minivtun-rs -l 0.0.0.0:1234 -a 10.0.0.1/24 -e helloworld
 ```
 
-client
+### Client
+
 ```
 minivtun-rs -r {SERVERADDR}:1234 -a 10.0.0.2/24 -e helloworld
 ```
 
-view status
+### View Status
+
 ```
 minivtun-rs -i
 ```
 
-#### hole punching setup example
+## Hole Punching Setup Example
 
-server
+### Server
+
 ```
 minivtun-rs --rndz_server rndz.optman.net:8888 --rndz-local-id {SERVERNAME}  -a 10.0.0.1/24 -e helloworld
 ```
 
-client
+### Client
+
 ```
 minivtun-rs --rndz_server rndz.optman.net:8888 --rndz-remote-id {SERVERNAME} --rndz-local-id {LOCALNAME} -a 10.0.0.2/24 -e helloworld
 ```
 
+## Building
 
+Ensure you have Rust installed. Then, clone the repository and build the project:
+
+```
+git clone https://github.com/optman/minivtun-rs.git
+cd minivtun-rs
+cargo build --release
+```
+
+## Contributing
+
+Contributions are welcome! Please open an issue or submit a pull request for any enhancements or bug fixes.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
