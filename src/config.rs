@@ -7,8 +7,9 @@ use crate::RndzConfig;
 use ipnet::IpNet;
 use ipnet::{Ipv4Net, Ipv6Net};
 use std::net::{IpAddr, SocketAddr};
-use std::os::unix::prelude::RawFd;
+use std::os::unix::net::UnixListener;
 use std::time::Duration;
+use tun::platform::posix::Fd;
 
 const DEFAULT_MTU: i32 = 1300;
 const DEFAULT_RECONNECT_TIMEOUT: Duration = Duration::from_secs(47);
@@ -25,8 +26,8 @@ pub struct Config<'a> {
     #[allow(clippy::type_complexity)]
     pub(crate) socket_factory: Option<&'a dyn Fn(&Config, bool) -> Result<Socket, Error>>,
     pub(crate) socket: Option<Socket>,
-    pub(crate) tun_fd: RawFd,
-    pub(crate) control_fd: Option<RawFd>,
+    pub(crate) tun_fd: Option<Fd>,
+    pub(crate) control_fd: Option<UnixListener>,
     pub ifname: Option<String>,
     pub mtu: i32,
     pub loc_tun_in: Option<Ipv4Net>,
@@ -67,8 +68,8 @@ impl<'a> Config<'a> {
         self
     }
 
-    pub fn with_tun_fd(&mut self, fd: RawFd) -> &mut Self {
-        self.tun_fd = fd;
+    pub fn with_tun_fd(&mut self, fd: Fd) -> &mut Self {
+        self.tun_fd = Some(fd);
         self
     }
 
@@ -81,7 +82,7 @@ impl<'a> Config<'a> {
         self
     }
 
-    pub fn with_control_fd(&mut self, fd: RawFd) -> &mut Self {
+    pub fn with_control_fd(&mut self, fd: UnixListener) -> &mut Self {
         self.control_fd = Some(fd);
         self
     }

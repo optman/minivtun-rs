@@ -17,7 +17,7 @@ use std::mem::{self, MaybeUninit};
 use std::net::{IpAddr, SocketAddr};
 use std::os::unix::io::FromRawFd;
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::os::unix::net::UnixStream;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::time::Instant;
 use tun::platform::posix::Fd;
 
@@ -34,6 +34,7 @@ pub struct Server<'a> {
     socket: Socket,
     stats: HashMap<IpAddr, Stat>,
     tun: Fd,
+    control_fd: Option<UnixListener>,
     rt: RouteTable,
     last_rebind: Option<Instant>,
     last_health: Option<Instant>,
@@ -50,11 +51,16 @@ impl<'a> Server<'a> {
                 &config, config.wait_dns
             )?,
         };
-        let tun = Fd::new(config.tun_fd).unwrap();
+        let tun = config
+            .tun_fd
+            .take()
+            .ok_or_else(|| Error::InvalidArg("tun_fd not set".to_string()))?;
+        let control_fd = config.control_fd.take();
         Ok(Self {
             config,
             socket,
             tun,
+            control_fd,
             stats: Default::default(),
             rt: Default::default(),
             last_rebind: Some(Instant::now()),
@@ -70,7 +76,11 @@ impl<'a> Server<'a> {
             }
         }
 
-        poll::poll(self.tun.as_raw_fd(), self.config.control_fd, self)
+        poll::poll(
+            self.tun.as_raw_fd(),
+            self.control_fd.as_ref().map(|v| v.as_raw_fd()),
+            self,
+        )
     }
 
     fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result {

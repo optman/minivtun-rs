@@ -12,8 +12,8 @@ use std::io::Read;
 use std::net::UdpSocket;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
+use tun::platform::posix::Fd;
 use tun::{platform::Device, Device as _};
-
 mod flags;
 use minivtun::*;
 
@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create TUN interface
     let tun = config_tun(&config)?;
-    config.with_tun_fd(tun.as_raw_fd());
+    config.with_tun_fd(Fd::new(tun.as_raw_fd()).unwrap());
 
     // Setup remote ID based on feature flag
     let remote_id = get_remote_id(&config);
@@ -66,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     fs::create_dir_all(CONTROL_PATH_BASE)?;
     let control_socket = UnixListener::bind(control_path)?;
-    config.with_control_fd(control_socket.as_raw_fd());
+    config.with_control_fd(control_socket);
 
     // Warn if encryption is not enabled
     if config.cryptor.is_none() {

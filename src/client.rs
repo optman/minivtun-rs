@@ -16,6 +16,7 @@ use std::io::{Read, Write};
 use std::mem::MaybeUninit;
 use std::os::unix::io::FromRawFd;
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::os::unix::net::UnixListener;
 use std::os::unix::net::UnixStream;
 use std::time::Instant;
 use tun::platform::posix::Fd;
@@ -29,6 +30,7 @@ pub struct Client<'a> {
     socket: Socket,
     state: State,
     tun: Fd,
+    control_fd: Option<UnixListener>,
     server_index: usize,
 }
 
@@ -46,11 +48,17 @@ impl<'a> Client<'a> {
             |v| Ok(v),
         )?;
 
-        let tun = Fd::new(config.tun_fd).map_err(|e| Error::TunInitialization(e))?;
+        let tun = config
+            .tun_fd
+            .take()
+            .ok_or_else(|| Error::InvalidArg("tun_fd not set".to_string()))?;
+
+        let control_fd = config.control_fd.take();
         Ok(Self {
             config,
             socket,
             tun,
+            control_fd,
             state: Default::default(),
             server_index: 0,
         })
@@ -71,7 +79,11 @@ impl<'a> Client<'a> {
         }
         self.state.last_connect = Some(Instant::now());
 
-        poll::poll(self.tun.as_raw_fd(), self.config.control_fd, self)
+        poll::poll(
+            self.tun.as_raw_fd(),
+            self.control_fd.as_ref().map(|v| v.as_raw_fd()),
+            self,
+        )
     }
 
     fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result<()> {
