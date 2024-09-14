@@ -2,6 +2,10 @@ use std::error::Error;
 use std::mem;
 use std::mem::MaybeUninit;
 use std::os::unix::io::RawFd;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::{cmp::max, io, ptr};
 
 extern crate libc;
@@ -16,10 +20,18 @@ pub trait Reactor {
     fn handle_control_connection(&mut self, _fd: RawFd);
 }
 
-pub fn poll<T: Reactor>(tun_fd: RawFd, control_fd: Option<RawFd>, mut reactor: T) -> Result {
+pub fn poll<T: Reactor>(
+    tun_fd: RawFd,
+    control_fd: Option<RawFd>,
+    mut reactor: T,
+    should_stop: Option<Arc<AtomicBool>>,
+) -> Result {
     let mut fd_set = unsafe { MaybeUninit::assume_init(MaybeUninit::<libc::fd_set>::uninit()) };
 
-    loop {
+    while !should_stop
+        .as_ref()
+        .map_or(false, |stop| stop.load(Ordering::Relaxed))
+    {
         let socket_fd = reactor.socket_fd();
         let control_fd = control_fd.unwrap_or(0);
 
@@ -72,4 +84,6 @@ pub fn poll<T: Reactor>(tun_fd: RawFd, control_fd: Option<RawFd>, mut reactor: T
             }
         }
     }
+
+    Ok(())
 }

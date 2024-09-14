@@ -137,7 +137,7 @@ pub fn rndz_socket_factory() -> Box<dyn Fn(&Config, bool) -> Result<Socket, Erro
 
 #[allow(clippy::type_complexity)]
 pub fn config_socket_factory(
-    _config: &mut Config,
+    _config: &Config,
 ) -> Box<dyn Fn(&Config, bool) -> Result<Socket, Error>> {
     #[cfg(not(feature = "holepunch"))]
     let socket_factory = native_socket_factory();
@@ -146,7 +146,7 @@ pub fn config_socket_factory(
     let socket_factory = if _config.rndz.is_none() {
         native_socket_factory()
     } else {
-        _config.rebind = true;
+        // _config.rebind = true;
         rndz_socket_factory()
     };
 
