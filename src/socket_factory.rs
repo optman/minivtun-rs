@@ -3,6 +3,7 @@ use crate::*;
 use log::debug;
 #[cfg(feature = "holepunch")]
 use log::error;
+use log::info;
 #[cfg(target_os = "linux")]
 use nix::sys::socket::{setsockopt, sockopt};
 #[cfg(target_os = "linux")]
@@ -27,6 +28,7 @@ pub fn choose_bind_addr(
                 Ok(mut addrs) => break addrs.next(),
                 Err(err) => {
                     if wait_dns {
+                        info!("wait dns");
                         thread::sleep(config.reconnect_timeout);
                         continue;
                     } else {
@@ -118,6 +120,7 @@ pub fn rndz_socket_factory() -> Box<dyn Fn(&Config, bool) -> Result<Socket, Erro
             match builder() {
                 Err(e) => {
                     if wait_dns {
+                        info!("wait dns?");
                         thread::sleep(config.reconnect_timeout);
                         continue;
                     }
