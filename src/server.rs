@@ -76,12 +76,11 @@ impl<'a> Server<'a> {
             }
         }
 
-        let should_stop = self.config.should_stop.take();
         poll::poll(
             self.tun.as_raw_fd(),
             self.control_fd.as_ref().map(|v| v.as_raw_fd()),
+            self.config.exit_signal.as_ref().map(|v| v.as_raw_fd()),
             self,
-            should_stop,
         )
     }
 

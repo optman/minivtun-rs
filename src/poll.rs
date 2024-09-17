@@ -2,10 +2,6 @@ use std::error::Error;
 use std::mem;
 use std::mem::MaybeUninit;
 use std::os::unix::io::RawFd;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
 use std::{cmp::max, io, ptr};
 
 extern crate libc;
@@ -23,19 +19,17 @@ pub trait Reactor {
 pub fn poll<T: Reactor>(
     tun_fd: RawFd,
     control_fd: Option<RawFd>,
+    exit_signal: Option<RawFd>,
     mut reactor: T,
-    should_stop: Option<Arc<AtomicBool>>,
 ) -> Result {
     let mut fd_set = unsafe { MaybeUninit::assume_init(MaybeUninit::<libc::fd_set>::uninit()) };
 
-    while !should_stop
-        .as_ref()
-        .map_or(false, |stop| stop.load(Ordering::Relaxed))
-    {
+    loop {
         let socket_fd = reactor.socket_fd();
         let control_fd = control_fd.unwrap_or(0);
+        let exit_signal_fd = exit_signal.unwrap_or(0);
 
-        let nfds = max(max(tun_fd, socket_fd), control_fd) + 1;
+        let nfds = max(max(max(tun_fd, socket_fd), control_fd), exit_signal_fd) + 1;
 
         unsafe {
             libc::FD_ZERO(&mut fd_set);
@@ -43,6 +37,9 @@ pub fn poll<T: Reactor>(
             libc::FD_SET(socket_fd, &mut fd_set);
             if control_fd != 0 {
                 libc::FD_SET(control_fd, &mut fd_set);
+            }
+            if exit_signal_fd != 0 {
+                libc::FD_SET(exit_signal_fd, &mut fd_set);
             }
         }
 
@@ -61,7 +58,11 @@ pub fn poll<T: Reactor>(
                 )
             }
         {
-            Err(io::Error::last_os_error())?;
+            return Err(io::Error::last_os_error().into());
+        }
+
+        if unsafe { libc::FD_ISSET(exit_signal_fd, &fd_set) } {
+            break;
         }
 
         reactor.keepalive()?;

@@ -7,9 +7,8 @@ use crate::RndzConfig;
 use ipnet::IpNet;
 use ipnet::{Ipv4Net, Ipv6Net};
 use std::net::{IpAddr, SocketAddr};
+use std::os::unix::io::OwnedFd;
 use std::os::unix::net::UnixListener;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 use std::time::Duration;
 use tun::platform::posix::Fd;
 
@@ -51,7 +50,7 @@ pub struct Config<'a> {
     #[cfg(feature = "holepunch")]
     pub rndz: Option<RndzConfig<'a>>,
     pub info: bool,
-    pub should_stop: Option<Arc<AtomicBool>>,
+    pub exit_signal: Option<OwnedFd>,
 }
 
 impl<'a> Config<'a> {
@@ -116,8 +115,8 @@ impl<'a> Config<'a> {
         &self.socket_factory
     }
 
-    pub fn with_should_stop(&mut self, should_stop: Arc<AtomicBool>) -> &mut Self {
-        self.should_stop = Some(should_stop);
+    pub fn with_exit_signal(&mut self, exit_signal: OwnedFd) -> &mut Self {
+        self.exit_signal = Some(exit_signal);
         self
     }
 }
