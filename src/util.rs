@@ -57,7 +57,7 @@ pub fn build_server_addr(addr: &str) -> String {
             .next()
             .map(|v| v.parse::<u16>().expect("Invalid end port"))
         {
-            let port: u16 = rand::thread_rng().gen_range(start_port, end_port);
+            let port: u16 = rand::thread_rng().gen_range(start_port..end_port);
             Some(format!("{}:{}", host, port))
         } else {
             None

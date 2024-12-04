@@ -69,10 +69,15 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
     #[cfg(feature = "holepunch")]
     if matches.is_present("rndz-server") {
         config.rndz = Some(RndzConfig {
-            server: matches.value_of("rndz-server").map(Into::into),
-            local_id: matches.value_of("rndz-local-id").map(Into::into),
+            server: matches
+                .value_of("rndz-server")
+                .expect("rndz server must be present")
+                .to_owned(),
+            local_id: matches
+                .value_of("rndz-local-id")
+                .expect("rndz-local-id must be present")
+                .to_owned(),
             remote_id: matches.value_of("rndz-remote-id").map(Into::into),
-            ..Default::default()
         });
     }
 

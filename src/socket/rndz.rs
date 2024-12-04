@@ -5,19 +5,21 @@ use std::net::{SocketAddr, UdpSocket};
 use std::ops::{Deref, DerefMut};
 use std::time::{Duration, Instant};
 
+pub use rndz::SocketConfigure;
+
 pub struct RndzSocket {
     rndz: rndz::Client,
     socket: Option<UdpSocket>,
 }
 
 impl RndzSocket {
-    pub fn new(server: &str, id: &str, local_addr: Option<SocketAddr>) -> Result<Self> {
-        let rndz = rndz::Client::new(server, id, local_addr)?;
-        Self::_new(rndz)
-    }
-
-    pub fn new_with_socket(server: &str, id: &str, svr_sk: UdpSocket) -> Result<Self> {
-        let rndz = rndz::Client::new_with_socket(server, id, svr_sk)?;
+    pub fn new(
+        server: &str,
+        id: &str,
+        local_addr: Option<SocketAddr>,
+        sk_cfg: Option<Box<dyn SocketConfigure>>,
+    ) -> Result<Self> {
+        let rndz = rndz::Client::new(server, id, local_addr, sk_cfg)?;
         Self::_new(rndz)
     }
 

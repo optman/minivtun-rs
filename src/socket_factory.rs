@@ -1,23 +1,24 @@
 use crate::*;
 #[cfg(target_os = "linux")]
 use log::debug;
-#[cfg(feature = "holepunch")]
-use log::error;
-use log::info;
 #[cfg(target_os = "linux")]
 use nix::sys::socket::{setsockopt, sockopt};
-#[cfg(target_os = "linux")]
-use std::os::unix::io::AsRawFd;
 
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
+use std::os::fd::{AsRawFd, BorrowedFd};
+use std::rc::Rc;
 use std::thread;
 use util::build_server_addr;
 
-pub fn choose_bind_addr(
-    server_addr: Option<&str>,
-    config: &Config,
-    wait_dns: bool,
-) -> Result<SocketAddr, Error> {
+#[cfg(feature = "holepunch")]
+pub use rndz::udp::SocketConfigure;
+
+#[cfg(not(feature = "holepunch"))]
+pub trait SocketConfigure {
+    fn config_socket(&self, sk: RawFd) -> Result<()>;
+}
+
+pub fn choose_bind_addr(server_addr: Option<&str>, config: &Config) -> Result<SocketAddr, Error> {
     let server_addr: Option<SocketAddr> = match server_addr {
         Some(ref server_addr) => loop {
             let addrs = server_addr.to_socket_addrs().map_err(|_| {
@@ -27,8 +28,8 @@ pub fn choose_bind_addr(
             match addrs {
                 Ok(mut addrs) => break addrs.next(),
                 Err(err) => {
-                    if wait_dns {
-                        info!("wait dns");
+                    if config.wait_dns {
+                        log::info!("wait dns");
                         thread::sleep(config.reconnect_timeout);
                         continue;
                     } else {
@@ -49,19 +50,16 @@ pub fn choose_bind_addr(
     Ok(default_listen_addr.parse().unwrap())
 }
 
-pub fn config_socket(socket: &mut UdpSocket, _config: &Config) -> Result<(), Error> {
-    socket.set_nonblocking(true).unwrap();
-
-    #[cfg(target_os = "linux")]
-    if let Some(fwmark) = _config.fwmark {
-        debug!("set fwmark {}", fwmark);
-        setsockopt(socket.as_raw_fd(), sockopt::Mark, &fwmark).unwrap();
-    }
-    Ok(())
+pub trait SocketFactory {
+    fn create_socket(&self) -> Result<Box<Socket>, Error>;
 }
-#[allow(clippy::type_complexity)]
-pub fn native_socket_factory() -> Box<dyn Fn(&Config, bool) -> Result<Socket, Error>> {
-    let socket_factory = |config: &Config, wait_dns: bool| -> Result<Socket, Error> {
+
+struct NativeSocketFactory {
+    config: Rc<Config>,
+}
+impl SocketFactory for NativeSocketFactory {
+    fn create_socket(&self) -> Result<Box<Socket>, Error> {
+        let config = &self.config;
         let bind_addr = match config.listen_addr {
             Some(addr) => addr,
             None => choose_bind_addr(
@@ -73,41 +71,53 @@ pub fn native_socket_factory() -> Box<dyn Fn(&Config, bool) -> Result<Socket, Er
                     .map(|v| build_server_addr(v))
                     .as_deref(),
                 config,
-                wait_dns,
             )?,
         };
-        let mut socket = UdpSocket::bind(bind_addr).expect("listen address bind fail.");
-
-        config_socket(&mut socket, config)?;
+        let socket = UdpSocket::bind(bind_addr).expect("listen address bind fail.");
 
         Ok(Box::new(NativeSocket::new(socket)))
-    };
-
-    Box::new(socket_factory)
+    }
 }
 
 #[cfg(feature = "holepunch")]
-#[allow(clippy::type_complexity)]
-pub fn rndz_socket_factory() -> Box<dyn Fn(&Config, bool) -> Result<Socket, Error>> {
-    let socket_factory = move |config: &Config, wait_dns: bool| -> Result<Socket, Error> {
+struct SharedSocketConfigure {
+    sk_cfg: Rc<Box<dyn SocketConfigure>>,
+}
+
+#[cfg(feature = "holepunch")]
+impl SocketConfigure for SharedSocketConfigure {
+    fn config_socket(&self, sk: std::os::unix::prelude::RawFd) -> std::io::Result<()> {
+        self.sk_cfg.config_socket(sk)
+    }
+}
+
+#[cfg(feature = "holepunch")]
+struct RndzSocketFacoty {
+    config: Rc<Config>,
+    sk_cfg: Option<Rc<Box<dyn SocketConfigure>>>,
+}
+
+#[cfg(feature = "holepunch")]
+impl SocketFactory for RndzSocketFacoty {
+    fn create_socket(&self) -> Result<Box<Socket>, Error> {
+        let config = &self.config;
         let rndz = config.rndz.as_ref().expect("rndz config not set");
-        let server = rndz.server.as_ref().expect("rndz server not set");
-        let id = rndz.local_id.as_ref().expect("rndz local id not set");
+        let server = &rndz.server;
+        let id = &rndz.local_id;
         let builder = || -> Result<RndzSocket, Error> {
-            let mut socket = match rndz.svr_sk_builder {
-                Some(ref builder) => {
-                    RndzSocket::new_with_socket(server, id, builder(config, wait_dns)?)?
-                }
-                None => RndzSocket::new(server, id, config.listen_addr).map_err(|e| {
-                    error!("create rndz socket fail");
-                    e
-                })?,
-            };
+            let sk_cfg = self.sk_cfg.clone().map(|sk_cfg| {
+                let sk_cfg = SharedSocketConfigure { sk_cfg };
+                Box::new(sk_cfg) as Box<dyn SocketConfigure>
+            });
+
+            let mut socket =
+                RndzSocket::new(server, id, config.listen_addr, sk_cfg).inspect_err(|e| {
+                    log::error!("create rndz socket fail, {:?}", e);
+                })?;
 
             if let Some(ref remote_id) = rndz.remote_id {
-                socket.connect(remote_id).map_err(|e| {
-                    error!("rndz connect fail, {:}", e);
-                    e
+                socket.connect(remote_id).inspect_err(|e| {
+                    log::error!("rndz connect fail, {:}", e);
                 })?;
             } else {
                 socket.listen()?;
@@ -116,11 +126,11 @@ pub fn rndz_socket_factory() -> Box<dyn Fn(&Config, bool) -> Result<Socket, Erro
             Ok(socket)
         };
 
-        let mut socket = loop {
+        let socket = loop {
             match builder() {
                 Err(e) => {
-                    if wait_dns {
-                        info!("wait dns?");
+                    if config.wait_dns {
+                        log::info!("wait dns?");
                         thread::sleep(config.reconnect_timeout);
                         continue;
                     }
@@ -130,28 +140,84 @@ pub fn rndz_socket_factory() -> Box<dyn Fn(&Config, bool) -> Result<Socket, Erro
             }
         };
 
-        config_socket(&mut socket, config)?;
-
         Ok(Box::new(socket))
-    };
-
-    Box::new(socket_factory)
+    }
 }
 
-#[allow(clippy::type_complexity)]
-pub fn config_socket_factory(
-    _config: &Config,
-) -> Box<dyn Fn(&Config, bool) -> Result<Socket, Error>> {
-    #[cfg(not(feature = "holepunch"))]
-    let socket_factory = native_socket_factory();
-
+#[cfg(feature = "holepunch")]
+struct DefualtSocketFactory {
+    config: Rc<Config>,
+    sk_cfg: Rc<Box<dyn SocketConfigure>>,
+    native: NativeSocketFactory,
     #[cfg(feature = "holepunch")]
-    let socket_factory = if _config.rndz.is_none() {
-        native_socket_factory()
-    } else {
-        // _config.rebind = true;
-        rndz_socket_factory()
+    rndz: RndzSocketFacoty,
+}
+impl SocketFactory for DefualtSocketFactory {
+    fn create_socket(&self) -> Result<Box<Socket>, Error> {
+        #[cfg(feature = "holepunch")]
+        let socket = if self.config.rndz.is_some() {
+            self.rndz.create_socket()?
+        } else {
+            self.native.create_socket()?
+        };
+        #[cfg(not(feature = "holepunch"))]
+        let socket = self.native.create_socket()?;
+
+        self.sk_cfg.config_socket(socket.as_raw_fd())?;
+
+        socket.set_nonblocking(true).unwrap();
+
+        Ok(socket)
+    }
+}
+
+pub fn default_socket_factory(
+    config: Rc<Config>,
+    sk_cfg: Option<Box<dyn SocketConfigure>>,
+) -> Box<dyn SocketFactory> {
+    let native = NativeSocketFactory {
+        config: config.clone(),
     };
 
-    socket_factory
+    let sk_cfg: Box<dyn SocketConfigure> = sk_cfg.unwrap_or_else(|| {
+        Box::new(DefaultSocketConfig {
+            config: config.clone(),
+        })
+    });
+
+    let sk_cfg = Rc::new(sk_cfg);
+
+    #[cfg(feature = "holepunch")]
+    let rndz = RndzSocketFacoty {
+        config: config.clone(),
+        sk_cfg: Some(sk_cfg.clone()),
+    };
+
+    Box::new(DefualtSocketFactory {
+        config,
+        #[cfg(feature = "holepunch")]
+        rndz,
+        native,
+        sk_cfg,
+    })
+}
+
+struct DefaultSocketConfig {
+    config: Rc<Config>,
+}
+impl SocketConfigure for DefaultSocketConfig {
+    fn config_socket(&self, sk: std::os::unix::prelude::RawFd) -> std::io::Result<()> {
+        #[cfg(target_os = "linux")]
+        if let Some(fwmark) = self.config.fwmark {
+            debug!("set fwmark {}", fwmark);
+            setsockopt(
+                unsafe { &BorrowedFd::borrow_raw(sk) },
+                sockopt::Mark,
+                &fwmark,
+            )
+            .map_err(std::io::Error::other)?;
+        }
+
+        Ok(())
+    }
 }

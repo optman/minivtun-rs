@@ -14,6 +14,7 @@ pub enum Error {
     NoRoute(String),
     Io(#[from] std::io::Error),
     Packet(#[from] packet::Error),
+    Other(String),
 }
 
 impl fmt::Display for Error {

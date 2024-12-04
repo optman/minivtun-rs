@@ -1,7 +1,7 @@
 use {
     ipnet::IpNet,
     log::{debug, info},
-    rand::{thread_rng, Rng},
+    rand::{thread_rng, RngCore},
     std::{
         cell::RefCell,
         collections::HashMap,

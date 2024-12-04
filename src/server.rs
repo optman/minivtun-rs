@@ -7,19 +7,22 @@ use crate::{
     poll,
     route::RouteTable,
     socket::Socket,
+    Runtime,
 };
 use log::{debug, info, trace, warn};
+use nix::unistd::{read, write};
 use size::Size;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::mem::{self, MaybeUninit};
 use std::net::{IpAddr, SocketAddr};
+use std::os::fd::OwnedFd;
 use std::os::unix::io::FromRawFd;
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixStream;
+use std::rc::Rc;
 use std::time::Instant;
-use tun::platform::posix::Fd;
 
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
 
@@ -29,40 +32,22 @@ pub struct Stat {
     tx_bytes: u64,
 }
 
-pub struct Server<'a> {
-    config: Config<'a>,
-    socket: Socket,
+pub struct Server {
+    config: Rc<Config>,
+    rt: Runtime,
     stats: HashMap<IpAddr, Stat>,
-    tun: Fd,
-    control_fd: Option<UnixListener>,
-    rt: RouteTable,
+    route: RouteTable,
     last_rebind: Option<Instant>,
     last_health: Option<Instant>,
 }
 
-impl<'a> Server<'a> {
-    pub fn new(mut config: Config<'a>) -> std::result::Result<Self, Error> {
-        let socket = match config.socket.take() {
-            Some(socket) => socket,
-            None => config
-                .socket_factory
-                .as_ref()
-                .expect("neither socket nor socket_factory is set")(
-                &config, config.wait_dns
-            )?,
-        };
-        let tun = config
-            .tun_fd
-            .take()
-            .ok_or_else(|| Error::InvalidArg("tun_fd not set".to_string()))?;
-        let control_fd = config.control_fd.take();
+impl Server {
+    pub fn new(config: Rc<Config>, rt: Runtime) -> std::result::Result<Self, Error> {
         Ok(Self {
             config,
-            socket,
-            tun,
-            control_fd,
+            rt,
             stats: Default::default(),
-            rt: Default::default(),
+            route: Default::default(),
             last_rebind: Some(Instant::now()),
             last_health: None,
         })
@@ -71,23 +56,31 @@ impl<'a> Server<'a> {
     pub fn run(mut self) -> Result {
         for (net, gw) in &self.config.routes {
             match gw {
-                Some(gw) => self.rt.add_route(net, gw),
+                Some(gw) => self.route.add_route(net, gw),
                 None => return Err("route gw must be set in server mode!".into()),
             }
         }
 
         poll::poll(
-            self.tun.as_raw_fd(),
-            self.control_fd.as_ref().map(|v| v.as_raw_fd()),
-            self.config.exit_signal.as_ref().map(|v| v.as_raw_fd()),
+            self.tun().as_raw_fd(),
+            self.rt.control_fd.as_ref().map(|v| v.as_raw_fd()),
+            self.rt.exit_signal.as_ref().map(|v| v.as_raw_fd()),
             self,
         )
+    }
+
+    fn socket(&self) -> &Socket {
+        &*self.rt.socket
+    }
+
+    fn tun(&self) -> &OwnedFd {
+        &self.rt.tun_fd
     }
 
     fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result {
         let dst = dest_ip(pkt)?;
         let va = self
-            .rt
+            .route
             .get_route(&dst)
             .ok_or_else(|| crate::error::Error::NoRoute(dst.to_string()))?;
 
@@ -102,16 +95,17 @@ impl<'a> Server<'a> {
             .payload(pkt)?
             .build()?;
 
+        let dst = va.ra.addr();
         // ignore failure
-        let _ = self.socket.send_to(&buf, va.ra.addr());
+        let _ = self.socket().send_to(&buf, dst);
 
         Ok(())
     }
 
     fn forward_local(&mut self, ra: &SocketAddr, pkt: &[u8]) -> Result {
         let src = source_ip(pkt)?;
-        let ra = self.rt.get_or_add_ra(ra).clone();
-        if self.rt.add_or_update_va(&src, ra).is_none() {
+        let ra = self.route.get_or_add_ra(ra).clone();
+        if self.route.add_or_update_va(&src, ra).is_none() {
             debug!("unknown src {:}", src);
             return Ok(());
         }
@@ -121,7 +115,7 @@ impl<'a> Server<'a> {
         match pkt[0] >> 4 {
             4 | 6 => {
                 // ignore failure
-                let _ = self.tun.write(pkt)?;
+                let _ = write(self.tun(), pkt)?;
             }
             _ => {
                 debug!("[FWD] invalid packet!")
@@ -136,14 +130,14 @@ impl<'a> Server<'a> {
         src: SocketAddr,
         pkt: msg::echo::Packet<T>,
     ) -> Result {
-        let ra = self.rt.get_or_add_ra(&src).clone();
+        let ra = self.route.get_or_add_ra(&src).clone();
 
         let (va4, va6) = pkt.ip_addr()?;
         if !va4.is_unspecified() {
-            self.rt.add_or_update_va(&va4.into(), ra.clone());
+            self.route.add_or_update_va(&va4.into(), ra.clone());
         }
         if !va6.is_unspecified() {
-            self.rt.add_or_update_va(&va6.into(), ra.clone());
+            self.route.add_or_update_va(&va6.into(), ra.clone());
         }
 
         let mut builder = msg::Builder::default()
@@ -163,20 +157,20 @@ impl<'a> Server<'a> {
         let buf = builder.build()?;
 
         // ignore failure
-        let _ = self.socket.send_to(&buf, src);
+        let _ = self.socket().send_to(&buf, src);
 
         Ok(())
     }
 }
 
-impl<'a> Display for Server<'a> {
+impl Display for Server {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         writeln!(f, "server mode")?;
         writeln!(
             f,
             "{:<15} {:}",
             "local_addr:",
-            self.socket.local_addr().unwrap()
+            self.socket().local_addr().unwrap()
         )?;
         if let Some(ipv4) = self.config.loc_tun_in {
             writeln!(f, "{:<15} {:}", "ipv4:", ipv4)?;
@@ -187,23 +181,13 @@ impl<'a> Display for Server<'a> {
 
         #[cfg(feature = "holepunch")]
         if let Some(ref rndz) = self.config.rndz {
-            writeln!(
-                f,
-                "{:<15} {:}",
-                "rndz_server:",
-                rndz.server.as_ref().unwrap_or(&"".to_owned())
-            )?;
-            writeln!(
-                f,
-                "{:<15} {:}",
-                "rndz_id:",
-                rndz.local_id.as_ref().unwrap_or(&"".to_owned())
-            )?;
+            writeln!(f, "{:<15} {:}", "rndz_server:", rndz.server)?;
+            writeln!(f, "{:<15} {:}", "rndz_id:", rndz.local_id)?;
             writeln!(
                 f,
                 "{:<15} {:}",
                 "rndz_health:",
-                self.socket
+                self.socket()
                     .last_health()
                     .or(self.last_health)
                     .map(|v| format!("{:.0?} ago", v.elapsed()))
@@ -211,7 +195,7 @@ impl<'a> Display for Server<'a> {
             )?;
         }
 
-        write!(f, "{:}", self.rt)?;
+        write!(f, "{:}", self.route)?;
 
         writeln!(f, "stats:")?;
         let mut stat = self.stats.iter().collect::<Vec<_>>();
@@ -230,15 +214,15 @@ impl<'a> Display for Server<'a> {
     }
 }
 
-impl<'a> poll::Reactor for Server<'a> {
+impl poll::Reactor for Server {
     fn socket_fd(&self) -> RawFd {
-        self.socket.as_raw_fd()
+        self.socket().as_raw_fd()
     }
 
     fn tunnel_recv(&mut self) -> Result {
         let mut buf =
             unsafe { mem::MaybeUninit::assume_init(mem::MaybeUninit::<[u8; 1500]>::uninit()) };
-        let size = self.tun.read(&mut buf)?;
+        let size = read(self.tun().as_raw_fd(), &mut buf)?;
         match buf[0] >> 4 {
             4 => {
                 // ignore failure
@@ -262,7 +246,7 @@ impl<'a> poll::Reactor for Server<'a> {
 
     fn network_recv(&mut self) -> Result {
         let mut buf = unsafe { MaybeUninit::assume_init(MaybeUninit::<[u8; 1500]>::uninit()) };
-        let (size, src) = match self.socket.recv_from(&mut buf) {
+        let (size, src) = match self.socket().recv_from(&mut buf) {
             Ok((size, src)) => (size, src),
             Err(e) => {
                 debug!("receive from client fail. {:?}", e);
@@ -297,12 +281,11 @@ impl<'a> poll::Reactor for Server<'a> {
         let Config {
             rebind,
             rebind_timeout,
-            socket_factory,
             ..
-        } = self.config;
+        } = *self.config;
 
         if rebind
-            && (self.socket.is_stale()
+            && (self.socket().is_stale()
                 || self
                     .last_health
                     .map(|l| l.elapsed() > rebind_timeout)
@@ -315,11 +298,11 @@ impl<'a> poll::Reactor for Server<'a> {
             info!("Rebind...");
 
             self.last_rebind = Some(Instant::now());
-            if let Some(factory) = socket_factory {
-                match factory(&self.config, false) {
+            if let Some(ref factory) = self.rt.socket_factory {
+                match factory.create_socket() {
                     Ok(socket) => {
                         debug!("rebind to {:}", socket.local_addr().unwrap());
-                        self.socket = socket;
+                        self.rt.with_socket(socket);
                     }
                     Err(e) => {
                         warn!("rebind fail. {:}", e);
@@ -328,14 +311,14 @@ impl<'a> poll::Reactor for Server<'a> {
             }
         }
 
-        if let Some(last_health) = self.socket.last_health() {
+        if let Some(last_health) = self.socket().last_health() {
             self.last_health = Some(last_health);
         }
 
-        let Self { rt, stats, .. } = self;
+        let Self { route, stats, .. } = self;
 
-        rt.prune(self.config.client_timeout);
-        stats.retain(|k, _| rt.contains(k));
+        route.prune(self.config.client_timeout);
+        stats.retain(|k, _| route.contains(k));
         Ok(())
     }
 

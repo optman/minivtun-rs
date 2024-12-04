@@ -22,4 +22,4 @@ pub trait XSocket: DerefMut<Target = UdpSocket> {
     }
 }
 
-pub type Socket = Box<dyn XSocket>;
+pub type Socket = dyn XSocket;

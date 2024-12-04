@@ -114,11 +114,8 @@ impl<'a, B: Buffer> Builder<'a, B> {
     }
 
     pub fn cryptor(mut self, cryptor: &'a Option<Box<dyn Cryptor>>) -> Result<Self> {
-        match cryptor {
-            Some(cryptor) => {
-                self.finalizer.add(cryptor);
-            }
-            None => {}
+        if let Some(cryptor) = cryptor {
+            self.finalizer.add(cryptor);
         }
         Ok(self)
     }
@@ -210,8 +207,8 @@ mod tests {
 
         assert_eq!(buf.len(), 20 + 12); //align to block size
 
-        let mut buf = &mut buf[..];
-        let p = Packet::<&[u8]>::with_cryptor(&mut buf, &cryptor).unwrap();
+        let buf = &mut buf[..];
+        let p = Packet::<&[u8]>::with_cryptor(buf, &cryptor).unwrap();
         assert_eq!(p.seq().unwrap(), 1);
 
         let mut buf = Builder::default()
@@ -228,8 +225,8 @@ mod tests {
 
         assert_eq!(buf.len(), 20 + 24 + 4 /*padding*/);
 
-        let mut buf = &mut buf[..];
-        let p = Packet::<&[u8]>::with_cryptor(&mut buf, &cryptor).unwrap();
+        let buf = &mut buf[..];
+        let p = Packet::<&[u8]>::with_cryptor(buf, &cryptor).unwrap();
 
         assert_eq!(p.op().unwrap(), Op::EchoReq);
 

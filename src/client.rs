@@ -1,64 +1,43 @@
 use crate::config::Config;
 use crate::msg;
 use crate::poll;
+use crate::Runtime;
 use crate::{
-    error::Error,
     msg::Op,
     msg::{builder::Builder, ipdata, ipdata::Kind},
-    socket::Socket,
     state::State,
     util::build_server_addr,
+    Socket,
 };
 use log::{debug, info, trace, warn};
+use nix::unistd::{read, write};
 use size::Size;
-use std::fmt::{Display, Formatter};
-use std::io::{Read, Write};
+use std::fmt::Formatter;
+use std::io::Write;
 use std::mem::MaybeUninit;
+use std::os::fd::OwnedFd;
 use std::os::unix::io::FromRawFd;
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::os::unix::net::UnixListener;
 use std::os::unix::net::UnixStream;
+use std::rc::Rc;
 use std::time::Instant;
-use tun::platform::posix::Fd;
 
 extern crate libc;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-pub struct Client<'a> {
-    config: Config<'a>,
-    socket: Socket,
-    state: State,
-    tun: Fd,
-    control_fd: Option<UnixListener>,
-    server_index: usize,
+pub struct Client {
+    pub(crate) config: Rc<Config>,
+    pub(crate) rt: Runtime,
+    pub(crate) state: State,
+    pub(crate) server_index: usize,
 }
 
-impl<'a> Client<'a> {
-    pub fn new(mut config: Config<'a>) -> Result<Self> {
-        let socket = config.socket.take().map_or_else(
-            || {
-                config
-                    .socket_factory
-                    .as_ref()
-                    .expect("neither socket nor socket_factory is set")(
-                    &config, config.wait_dns
-                )
-            },
-            |v| Ok(v),
-        )?;
-
-        let tun = config
-            .tun_fd
-            .take()
-            .ok_or_else(|| Error::InvalidArg("tun_fd not set".to_string()))?;
-
-        let control_fd = config.control_fd.take();
+impl Client {
+    pub fn new(config: Rc<Config>, rt: Runtime) -> Result<Self> {
         Ok(Self {
             config,
-            socket,
-            tun,
-            control_fd,
+            rt,
             state: Default::default(),
             server_index: 0,
         })
@@ -73,18 +52,26 @@ impl<'a> Client<'a> {
         {
             //ignore failure
             let _ = self
-                .socket
+                .socket()
                 .connect(build_server_addr(server_addr))
-                .map_err(|e| warn!("{:?}", e));
+                .inspect_err(|e| warn!("{:?}", e));
         }
         self.state.last_connect = Some(Instant::now());
 
         poll::poll(
-            self.tun.as_raw_fd(),
-            self.control_fd.as_ref().map(|v| v.as_raw_fd()),
-            self.config.exit_signal.as_ref().map(|v| v.as_raw_fd()),
+            self.tun().as_raw_fd(),
+            self.rt.control_fd.as_ref().map(|v| v.as_raw_fd()),
+            self.rt.exit_signal.as_ref().map(|v| v.as_raw_fd()),
             self,
         )
+    }
+
+    fn socket(&self) -> &Socket {
+        &*self.rt.socket
+    }
+
+    fn tun(&self) -> &OwnedFd {
+        &self.rt.tun_fd
     }
 
     fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result<()> {
@@ -99,7 +86,7 @@ impl<'a> Client<'a> {
             .build()?;
 
         //ignore failure
-        let _ = self.socket.send(&buf);
+        let _ = self.socket().send(&buf);
 
         Ok(())
     }
@@ -110,7 +97,7 @@ impl<'a> Client<'a> {
         match pkt[0] >> 4 {
             4 | 6 => {
                 //ignore failure
-                let _ = self.tun.write(pkt);
+                let _ = write(self.tun(), pkt);
             }
             _ => debug!("[FWD]invalid packet!"),
         }
@@ -134,20 +121,20 @@ impl<'a> Client<'a> {
         }
 
         //ignore failure
-        let _ = self.socket.send(builder.build()?.as_ref());
+        let _ = self.socket().send(builder.build()?.as_ref());
 
         Ok(())
     }
 }
 
-impl<'a> Display for Client<'a> {
+impl std::fmt::Display for Client {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         writeln!(f, "client mode")?;
         writeln!(
             f,
             "{:<15} {}",
             "server_addr:",
-            self.socket
+            self.socket()
                 .peer_addr()
                 .map(|v| v.to_string())
                 .unwrap_or_else(|_| "NA".to_string())
@@ -156,7 +143,7 @@ impl<'a> Display for Client<'a> {
             f,
             "{:<15} {}",
             "local_addr:",
-            self.socket.local_addr().unwrap()
+            self.socket().local_addr().unwrap()
         )?;
         if let Some(ipv4) = self.config.loc_tun_in {
             writeln!(f, "{:<15} {}", "ipv4:", ipv4)?;
@@ -167,18 +154,8 @@ impl<'a> Display for Client<'a> {
 
         #[cfg(feature = "holepunch")]
         if let Some(ref rndz) = self.config.rndz {
-            writeln!(
-                f,
-                "{:<15} {}",
-                "rndz_server:",
-                rndz.server.as_deref().unwrap_or("")
-            )?;
-            writeln!(
-                f,
-                "{:<15} {}",
-                "rndz_local:",
-                rndz.local_id.as_deref().unwrap_or("")
-            )?;
+            writeln!(f, "{:<15} {}", "rndz_server:", rndz.server)?;
+            writeln!(f, "{:<15} {}", "rndz_local:", rndz.local_id)?;
             writeln!(
                 f,
                 "{:<15} {}",
@@ -213,14 +190,14 @@ impl<'a> Display for Client<'a> {
     }
 }
 
-impl<'a> poll::Reactor for Client<'a> {
+impl poll::Reactor for Client {
     fn socket_fd(&self) -> RawFd {
-        self.socket.as_raw_fd()
+        self.socket().as_raw_fd()
     }
 
     fn tunnel_recv(&mut self) -> Result<()> {
         let mut buf = unsafe { MaybeUninit::assume_init(MaybeUninit::<[u8; 1500]>::uninit()) };
-        let size = self.tun.read(&mut buf)?;
+        let size = read(self.tun().as_raw_fd(), &mut buf)?;
         match buf[0] >> 4 {
             4 => self.forward_remote(Kind::V4, &buf[..size])?,
             6 => self.forward_remote(Kind::V6, &buf[..size])?,
@@ -232,7 +209,7 @@ impl<'a> poll::Reactor for Client<'a> {
 
     fn network_recv(&mut self) -> Result<()> {
         let mut buf = unsafe { MaybeUninit::assume_init(MaybeUninit::<[u8; 1500]>::uninit()) };
-        match self.socket.recv_from(&mut buf) {
+        match self.socket().recv_from(&mut buf) {
             Ok((size, src)) => {
                 trace!("receive from  {:}, size {:}", src, size);
                 match msg::Packet::<&[u8]>::with_cryptor(&mut buf[..size], &self.config.cryptor) {
@@ -274,7 +251,7 @@ impl<'a> poll::Reactor for Client<'a> {
             rebind_timeout,
             keepalive_interval,
             ..
-        } = self.config;
+        } = *self.config;
 
         let State {
             last_rebind,
@@ -292,11 +269,11 @@ impl<'a> poll::Reactor for Client<'a> {
             if rebind && check_timeout(last_rebind, &rebind_timeout) {
                 info!("Rebind...");
                 self.state.last_rebind = Some(Instant::now());
-                if let Some(ref factory) = self.config.socket_factory {
-                    match factory(&self.config, false) {
+                if let Some(ref factory) = self.rt.socket_factory {
+                    match factory.create_socket() {
                         Ok(socket) => {
                             debug!("rebind to {:}", socket.local_addr()?);
-                            self.socket = socket;
+                            self.rt.with_socket(socket);
                         }
                         Err(e) => warn!("rebind fail, {:}", e),
                     }
@@ -310,7 +287,7 @@ impl<'a> poll::Reactor for Client<'a> {
                 let server_addr = &server_addrs[self.server_index];
                 //ignore failure
                 let _ = self
-                    .socket
+                    .socket()
                     .connect(build_server_addr(server_addr))
                     .map_err(|e| warn!("{:?}", e));
             }
