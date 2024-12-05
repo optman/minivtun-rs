@@ -1,3 +1,4 @@
+use crate::default_socket_configure;
 use crate::SocketConfigure;
 
 use crate::Error;
@@ -47,11 +48,16 @@ impl RuntimeBuilder {
         }
     }
     pub fn build(mut self) -> Result<Runtime, Error> {
-        let socket_configure = self.socket_configure.take();
+        let socket_configure = self
+            .socket_configure
+            .take()
+            .or_else(|| default_socket_configure(self.config.clone()));
+
         let socket_factory = self
             .socket_factory
             .take()
             .unwrap_or_else(|| default_socket_factory(self.config.clone(), socket_configure));
+
         let socket = self
             .socket
             .map_or_else(|| socket_factory.create_socket(), Ok)?;

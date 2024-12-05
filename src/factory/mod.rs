@@ -6,14 +6,11 @@ use native::NativeSocketFactory;
 #[cfg(feature = "holepunch")]
 mod rndz;
 
-#[cfg(target_os = "linux")]
-use nix::sys::socket::{setsockopt, sockopt};
-
 use std::os::fd::AsRawFd;
 use std::rc::Rc;
 
 #[allow(unused_imports)]
-use std::os::fd::{BorrowedFd, RawFd};
+use std::os::fd::RawFd;
 
 #[cfg(feature = "holepunch")]
 pub use ::rndz::udp::SocketConfigure;
@@ -30,7 +27,7 @@ pub trait SocketFactory {
 struct DefualtSocketFactory {
     #[cfg(feature = "holepunch")]
     config: Rc<Config>,
-    sk_cfg: Rc<Box<dyn SocketConfigure>>,
+    sk_cfg: Option<Rc<Box<dyn SocketConfigure>>>,
     native: NativeSocketFactory,
     #[cfg(feature = "holepunch")]
     rndz: rndz::RndzSocketFacoty,
@@ -46,7 +43,9 @@ impl SocketFactory for DefualtSocketFactory {
         #[cfg(not(feature = "holepunch"))]
         let socket = self.native.create_socket()?;
 
-        self.sk_cfg.config_socket(socket.as_raw_fd())?;
+        if let Some(ref sk_cfg) = self.sk_cfg {
+            sk_cfg.config_socket(socket.as_raw_fd())?;
+        }
 
         socket.set_nonblocking(true).unwrap();
 
@@ -62,18 +61,12 @@ pub fn default_socket_factory(
         config: config.clone(),
     };
 
-    let sk_cfg: Box<dyn SocketConfigure> = sk_cfg.unwrap_or_else(|| {
-        Box::new(DefaultSocketConfig {
-            config: config.clone(),
-        })
-    });
-
-    let sk_cfg = Rc::new(sk_cfg);
+    let sk_cfg = sk_cfg.map(Into::into);
 
     #[cfg(feature = "holepunch")]
     let rndz = rndz::RndzSocketFacoty {
         config: config.clone(),
-        sk_cfg: Some(sk_cfg.clone()),
+        sk_cfg: sk_cfg.clone(),
     };
 
     Box::new(DefualtSocketFactory {
@@ -86,24 +79,40 @@ pub fn default_socket_factory(
     })
 }
 
-struct DefaultSocketConfig {
-    #[allow(dead_code)]
-    config: Rc<Config>,
+#[cfg(target_os = "linux")]
+pub fn default_socket_configure(config: Rc<Config>) -> Option<Box<dyn SocketConfigure>> {
+    Some(Box::new(linux::DefaultSocketConfig {
+        config: config.clone(),
+    }))
 }
-impl SocketConfigure for DefaultSocketConfig {
-    #[allow(unused_variables)]
-    fn config_socket(&self, sk: std::os::unix::prelude::RawFd) -> std::io::Result<()> {
-        #[cfg(target_os = "linux")]
-        if let Some(fwmark) = self.config.fwmark {
-            log::debug!("set fwmark {}", fwmark);
-            setsockopt(
-                unsafe { &BorrowedFd::borrow_raw(sk) },
-                sockopt::Mark,
-                &fwmark,
-            )
-            .map_err(std::io::Error::other)?;
-        }
+#[cfg(not(target_os = "linux"))]
+pub fn default_socket_configure(_: Rc<Config>) -> Option<Box<dyn SocketConfigure>> {
+    None
+}
 
-        Ok(())
+#[cfg(target_os = "linux")]
+mod linux {
+    use crate::{Config, SocketConfigure};
+    use nix::sys::socket::{setsockopt, sockopt};
+    use std::os::fd::BorrowedFd;
+    use std::rc::Rc;
+    pub(crate) struct DefaultSocketConfig {
+        pub(crate) config: Rc<Config>,
+    }
+    impl SocketConfigure for DefaultSocketConfig {
+        #[allow(unused_variables)]
+        fn config_socket(&self, sk: std::os::unix::prelude::RawFd) -> std::io::Result<()> {
+            if let Some(fwmark) = self.config.fwmark {
+                log::debug!("set fwmark {}", fwmark);
+                setsockopt(
+                    unsafe { &BorrowedFd::borrow_raw(sk) },
+                    sockopt::Mark,
+                    &fwmark,
+                )
+                .map_err(std::io::Error::other)?;
+            }
+
+            Ok(())
+        }
     }
 }
