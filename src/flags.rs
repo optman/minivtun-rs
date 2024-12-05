@@ -1,7 +1,7 @@
 use clap::{App, Arg};
 use ipnet::IpNet;
 #[cfg(feature = "holepunch")]
-use minivtun::RndzConfig;
+use minivtun::config::rndz;
 use minivtun::{cryptor, Config, Error};
 use std::{net::IpAddr, result::Result, time::Duration};
 
@@ -68,7 +68,7 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
 
     #[cfg(feature = "holepunch")]
     if matches.is_present("rndz-server") {
-        config.rndz = Some(RndzConfig {
+        config.rndz = Some(rndz::Config {
             server: matches
                 .value_of("rndz-server")
                 .expect("rndz server must be present")

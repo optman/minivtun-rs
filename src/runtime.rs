@@ -1,4 +1,4 @@
-use rndz::udp::SocketConfigure;
+use crate::SocketConfigure;
 
 use crate::Error;
 use crate::{default_socket_factory, Config, Socket, SocketFactory};

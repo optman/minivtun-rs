@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use daemonize::Daemonize;
 use ipnet::IpNet;
 use log::{debug, info, warn};

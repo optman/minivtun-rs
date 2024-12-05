@@ -1,6 +1,6 @@
-use crate::cryptor;
 #[cfg(feature = "holepunch")]
-use crate::RndzConfig;
+use crate::config::rndz;
+use crate::cryptor;
 
 use ipnet::IpNet;
 use ipnet::{Ipv4Net, Ipv6Net};
@@ -34,7 +34,7 @@ pub struct Config {
     pub wait_dns: bool,
     pub rebind: bool,
     #[cfg(feature = "holepunch")]
-    pub rndz: Option<RndzConfig>,
+    pub rndz: Option<rndz::Config>,
     pub info: bool,
 }
 
@@ -72,7 +72,7 @@ impl Config {
     }
 
     #[cfg(feature = "holepunch")]
-    pub fn rndz(&self) -> Option<&RndzConfig> {
+    pub fn rndz(&self) -> Option<&rndz::Config> {
         self.rndz.as_ref()
     }
 }
