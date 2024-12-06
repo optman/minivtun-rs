@@ -30,6 +30,7 @@ md-5 = { tag = "md5-v0.9.1", git = "https://github.com/RustCrypto/hashes" }
 nix = { version = "0.29.0", features = ["socket"] }
 rndz = { version = "0.1.5", optional = true, git = "https://github.com/optman/rndz" }
 size = "0.4.1"
+pretty-duration = "*"
 
 
 [lib]

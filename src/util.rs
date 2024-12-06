@@ -1,6 +1,6 @@
 use crate::error::{Error, Result};
 use rand::Rng;
-use std::net::IpAddr;
+use std::{net::IpAddr, time::Duration};
 
 /// Converts a byte slice to an IPv4 address
 fn ipv4_from_slice(s: &[u8]) -> IpAddr {
@@ -67,4 +67,7 @@ pub fn build_server_addr(addr: &str) -> String {
     };
 
     gen_addr.unwrap_or_else(|| addr.to_owned())
+}
+pub(crate) fn pretty_duration(duration: &Duration) -> String {
+    pretty_duration::pretty_duration(&Duration::from_secs(duration.as_secs()), None)
 }

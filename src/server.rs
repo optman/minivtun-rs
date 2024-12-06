@@ -7,6 +7,7 @@ use crate::{
     poll,
     route::RouteTable,
     socket::Socket,
+    util::pretty_duration,
     Runtime,
 };
 use log::{debug, info, trace, warn};
@@ -200,7 +201,7 @@ impl Display for Server {
                     .ok_or(std::io::Error::other("socket not created"))
                     .map(|s| s.last_health())
                     .unwrap_or(self.last_health)
-                    .map(|v| format!("{:.0?} ago", v.elapsed()))
+                    .map(|v| format!("{} ago", pretty_duration(&v.elapsed())))
                     .unwrap_or_else(|| "Never".to_owned())
             )?;
         }

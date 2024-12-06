@@ -1,4 +1,5 @@
 use {
+    crate::util::pretty_duration,
     ipnet::IpNet,
     log::{debug, info},
     rand::{thread_rng, RngCore},
@@ -208,10 +209,10 @@ impl Display for RouteTable {
         for v in cs {
             writeln!(
                 f,
-                "{:<15} @ {:<50} {:>6.0?} ago",
+                "{:<15} @ {:<50} {:>20} ago",
                 v.va,
                 v.ra.addr(),
-                v.last_recv.elapsed()
+                pretty_duration(&v.last_recv.elapsed())
             )?;
         }
         Ok(())

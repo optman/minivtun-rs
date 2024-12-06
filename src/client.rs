@@ -7,6 +7,7 @@ use crate::{
     msg::{builder::Builder, ipdata, ipdata::Kind},
     state::State,
     util::build_server_addr,
+    util::pretty_duration,
     Socket,
 };
 use log::{debug, info, trace, warn};
@@ -182,7 +183,7 @@ impl std::fmt::Display for Client {
             "last_ack:",
             state.last_ack.map_or_else(
                 || "Never".to_string(),
-                |v| format!("{:.0?} ago", v.elapsed())
+                |v| format!("{} ago", pretty_duration(&v.elapsed()))
             )
         )?;
         writeln!(
@@ -191,7 +192,7 @@ impl std::fmt::Display for Client {
             "last_rx:",
             state.last_rx.map_or_else(
                 || "Never".to_string(),
-                |v| format!("{:.0?} ago", v.elapsed())
+                |v| format!("{} ago", pretty_duration(&v.elapsed()))
             )
         )?;
         writeln!(f, "{:<15} {}", "rx:", Size::from_bytes(state.rx_bytes))?;
