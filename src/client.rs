@@ -202,8 +202,8 @@ impl std::fmt::Display for Client {
 }
 
 impl poll::Reactor for Client {
-    fn socket_fd(&self) -> RawFd {
-        self.socket().map(|s| s.as_raw_fd()).unwrap_or(0)
+    fn socket_fd(&self) -> Option<RawFd> {
+        self.socket().map(|s| s.as_raw_fd())
     }
 
     fn tunnel_recv(&mut self) -> Result<()> {

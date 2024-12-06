@@ -9,7 +9,7 @@ extern crate libc;
 type Result = std::result::Result<(), Box<dyn Error>>;
 
 pub trait Reactor {
-    fn socket_fd(&self) -> RawFd;
+    fn socket_fd(&self) -> Option<RawFd>;
     fn keepalive(&mut self) -> Result;
     fn tunnel_recv(&mut self) -> Result;
     fn network_recv(&mut self) -> Result;
@@ -25,7 +25,7 @@ pub fn poll<T: Reactor>(
     let mut fd_set = unsafe { MaybeUninit::assume_init(MaybeUninit::<libc::fd_set>::uninit()) };
 
     loop {
-        let socket_fd = reactor.socket_fd();
+        let socket_fd = reactor.socket_fd().unwrap_or(0);
         let control_fd = control_fd.unwrap_or(0);
         let exit_signal_fd = exit_signal.unwrap_or(0);
 
@@ -34,12 +34,10 @@ pub fn poll<T: Reactor>(
         unsafe {
             libc::FD_ZERO(&mut fd_set);
             libc::FD_SET(tun_fd, &mut fd_set);
-            libc::FD_SET(socket_fd, &mut fd_set);
-            if control_fd != 0 {
-                libc::FD_SET(control_fd, &mut fd_set);
-            }
-            if exit_signal_fd != 0 {
-                libc::FD_SET(exit_signal_fd, &mut fd_set);
+            for fd in [socket_fd, control_fd, exit_signal_fd] {
+                if fd != 0 {
+                    libc::FD_SET(fd, &mut fd_set);
+                }
             }
         }
 
@@ -61,7 +59,7 @@ pub fn poll<T: Reactor>(
             return Err(io::Error::last_os_error().into());
         }
 
-        if unsafe { libc::FD_ISSET(exit_signal_fd, &fd_set) } {
+        if exit_signal_fd != 0 && unsafe { libc::FD_ISSET(exit_signal_fd, &fd_set) } {
             break;
         }
 
@@ -71,7 +69,7 @@ pub fn poll<T: Reactor>(
             reactor.tunnel_recv()?
         }
 
-        if unsafe { libc::FD_ISSET(socket_fd, &fd_set) } {
+        if socket_fd != 0 && unsafe { libc::FD_ISSET(socket_fd, &fd_set) } {
             reactor.network_recv()?
         }
 
