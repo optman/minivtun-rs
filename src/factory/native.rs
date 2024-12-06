@@ -2,26 +2,16 @@ use crate::{util::build_server_addr, Config, Error, NativeSocket, Socket, Socket
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::rc::Rc;
 
-pub fn choose_bind_addr(server_addr: Option<&str>, config: &Config) -> Result<SocketAddr, Error> {
+pub fn choose_bind_addr(server_addr: Option<&str>) -> Result<SocketAddr, Error> {
     let server_addr: Option<SocketAddr> = match server_addr {
-        Some(ref server_addr) => loop {
-            let addrs = server_addr.to_socket_addrs().map_err(|_| {
+        Some(ref server_addr) => {
+            let mut addrs = server_addr.to_socket_addrs().map_err(|e| {
+                log::error!("Failed to resolve address {}, {}", server_addr, e);
                 Error::InvalidArg(format!("invalid remote addr or dns fail {:?}", server_addr))
-            });
+            })?;
 
-            match addrs {
-                Ok(mut addrs) => break addrs.next(),
-                Err(err) => {
-                    if config.wait_dns {
-                        log::info!("wait dns");
-                        std::thread::sleep(config.reconnect_timeout);
-                        continue;
-                    } else {
-                        return Err(err);
-                    }
-                }
-            }
-        },
+            addrs.next()
+        }
         None => None,
     };
 
@@ -42,16 +32,14 @@ impl SocketFactory for NativeSocketFactory {
         let config = &self.config;
         let bind_addr = match config.listen_addr {
             Some(addr) => addr,
-            None => choose_bind_addr(
-                config
+            None => {
+                let svr_addr = config
                     .server_addrs
                     .as_ref()
-                    .unwrap()
-                    .first()
-                    .map(|v| build_server_addr(v))
-                    .as_deref(),
-                config,
-            )?,
+                    .and_then(|v| v.first())
+                    .map(|v| build_server_addr(v));
+                choose_bind_addr(svr_addr.as_deref())?
+            }
         };
         let socket = UdpSocket::bind(bind_addr).expect("listen address bind fail.");
 

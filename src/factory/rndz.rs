@@ -45,19 +45,7 @@ impl SocketFactory for RndzSocketFacoty {
             Ok(socket)
         };
 
-        let socket = loop {
-            match builder() {
-                Err(e) => {
-                    if config.wait_dns {
-                        log::info!("wait dns?");
-                        std::thread::sleep(config.reconnect_timeout);
-                        continue;
-                    }
-                    Err(e)?
-                }
-                Ok(s) => break s,
-            }
-        };
+        let socket = builder()?;
 
         Ok(Box::new(socket))
     }

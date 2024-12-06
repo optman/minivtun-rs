@@ -50,11 +50,12 @@ impl Client {
             .as_ref()
             .and_then(|addrs| addrs.get(self.server_index))
         {
-            //ignore failure
-            let _ = self
-                .socket()
-                .connect(build_server_addr(server_addr))
-                .inspect_err(|e| warn!("{:?}", e));
+            if let Some(s) = self.socket() {
+                //ignore failure
+                let _ = s
+                    .connect(build_server_addr(server_addr))
+                    .inspect_err(|e| warn!("{:?}", e));
+            }
         }
         self.state.last_connect = Some(Instant::now());
 
@@ -66,8 +67,8 @@ impl Client {
         )
     }
 
-    fn socket(&self) -> &Socket {
-        &*self.rt.socket
+    fn socket(&self) -> Option<&Socket> {
+        self.rt.socket.as_deref()
     }
 
     fn tun(&self) -> &OwnedFd {
@@ -85,8 +86,10 @@ impl Client {
             .payload(pkt)?
             .build()?;
 
-        //ignore failure
-        let _ = self.socket().send(&buf);
+        if let Some(s) = self.socket() {
+            //ignore failure
+            let _ = s.send(&buf);
+        }
 
         Ok(())
     }
@@ -120,8 +123,10 @@ impl Client {
             builder = builder.ipv6_addr(addr6.addr())?;
         }
 
-        //ignore failure
-        let _ = self.socket().send(builder.build()?.as_ref());
+        if let Some(s) = self.socket() {
+            //ignore failure
+            let _ = s.send(builder.build()?.as_ref());
+        }
 
         Ok(())
     }
@@ -135,7 +140,8 @@ impl std::fmt::Display for Client {
             "{:<15} {}",
             "server_addr:",
             self.socket()
-                .peer_addr()
+                .ok_or(std::io::Error::other("socket not created"))
+                .and_then(|s| s.peer_addr())
                 .map(|v| v.to_string())
                 .unwrap_or_else(|_| "NA".to_string())
         )?;
@@ -143,7 +149,11 @@ impl std::fmt::Display for Client {
             f,
             "{:<15} {}",
             "local_addr:",
-            self.socket().local_addr().unwrap()
+            self.socket()
+                .ok_or(std::io::Error::other("socket not created"))
+                .and_then(|s| s.local_addr())
+                .map(|v| v.to_string())
+                .unwrap_or_else(|_| "NA".to_string())
         )?;
         if let Some(ipv4) = self.config.loc_tun_in {
             writeln!(f, "{:<15} {}", "ipv4:", ipv4)?;
@@ -192,7 +202,7 @@ impl std::fmt::Display for Client {
 
 impl poll::Reactor for Client {
     fn socket_fd(&self) -> RawFd {
-        self.socket().as_raw_fd()
+        self.socket().map(|s| s.as_raw_fd()).unwrap_or(0)
     }
 
     fn tunnel_recv(&mut self) -> Result<()> {
@@ -208,8 +218,13 @@ impl poll::Reactor for Client {
     }
 
     fn network_recv(&mut self) -> Result<()> {
+        let s = match self.socket() {
+            Some(s) => s,
+            None => return Ok(()),
+        };
+
         let mut buf = unsafe { MaybeUninit::assume_init(MaybeUninit::<[u8; 1500]>::uninit()) };
-        match self.socket().recv_from(&mut buf) {
+        match s.recv_from(&mut buf) {
             Ok((size, src)) => {
                 trace!("receive from  {:}, size {:}", src, size);
                 match msg::Packet::<&[u8]>::with_cryptor(&mut buf[..size], &self.config.cryptor) {
@@ -285,11 +300,12 @@ impl poll::Reactor for Client {
             if let Some(server_addrs) = &self.config.server_addrs {
                 self.server_index = (self.server_index + 1) % server_addrs.len();
                 let server_addr = &server_addrs[self.server_index];
-                //ignore failure
-                let _ = self
-                    .socket()
-                    .connect(build_server_addr(server_addr))
-                    .map_err(|e| warn!("{:?}", e));
+                if let Some(s) = self.socket() {
+                    //ignore failure
+                    let _ = s
+                        .connect(build_server_addr(server_addr))
+                        .map_err(|e| warn!("{:?}", e));
+                }
             }
         }
 

@@ -69,8 +69,8 @@ impl Server {
         )
     }
 
-    fn socket(&self) -> &Socket {
-        &*self.rt.socket
+    fn socket(&self) -> Option<&Socket> {
+        self.rt.socket.as_deref()
     }
 
     fn tun(&self) -> &OwnedFd {
@@ -96,8 +96,11 @@ impl Server {
             .build()?;
 
         let dst = va.ra.addr();
-        // ignore failure
-        let _ = self.socket().send_to(&buf, dst);
+
+        if let Some(s) = self.socket() {
+            // ignore failure
+            let _ = s.send_to(&buf, dst);
+        }
 
         Ok(())
     }
@@ -156,8 +159,10 @@ impl Server {
 
         let buf = builder.build()?;
 
-        // ignore failure
-        let _ = self.socket().send_to(&buf, src);
+        if let Some(s) = self.socket() {
+            // ignore failure
+            let _ = s.send_to(&buf, src);
+        }
 
         Ok(())
     }
@@ -170,7 +175,11 @@ impl Display for Server {
             f,
             "{:<15} {:}",
             "local_addr:",
-            self.socket().local_addr().unwrap()
+            self.socket()
+                .ok_or(std::io::Error::other("socket not created"))
+                .and_then(|s| s.local_addr())
+                .map(|v| v.to_string())
+                .unwrap_or_else(|_| "NA".to_string())
         )?;
         if let Some(ipv4) = self.config.loc_tun_in {
             writeln!(f, "{:<15} {:}", "ipv4:", ipv4)?;
@@ -188,10 +197,11 @@ impl Display for Server {
                 "{:<15} {:}",
                 "rndz_health:",
                 self.socket()
-                    .last_health()
-                    .or(self.last_health)
+                    .ok_or(std::io::Error::other("socket not created"))
+                    .map(|s| s.last_health())
+                    .unwrap_or(self.last_health)
                     .map(|v| format!("{:.0?} ago", v.elapsed()))
-                    .unwrap_or("Never".to_owned())
+                    .unwrap_or_else(|| "Never".to_owned())
             )?;
         }
 
@@ -216,7 +226,7 @@ impl Display for Server {
 
 impl poll::Reactor for Server {
     fn socket_fd(&self) -> RawFd {
-        self.socket().as_raw_fd()
+        self.socket().map(|s| s.as_raw_fd()).unwrap_or(0)
     }
 
     fn tunnel_recv(&mut self) -> Result {
@@ -245,8 +255,13 @@ impl poll::Reactor for Server {
     }
 
     fn network_recv(&mut self) -> Result {
+        let s = match self.socket() {
+            Some(s) => s,
+            None => return Ok(()),
+        };
+
         let mut buf = unsafe { MaybeUninit::assume_init(MaybeUninit::<[u8; 1500]>::uninit()) };
-        let (size, src) = match self.socket().recv_from(&mut buf) {
+        let (size, src) = match s.recv_from(&mut buf) {
             Ok((size, src)) => (size, src),
             Err(e) => {
                 debug!("receive from client fail. {:?}", e);
@@ -285,7 +300,7 @@ impl poll::Reactor for Server {
         } = *self.config;
 
         if rebind
-            && (self.socket().is_stale()
+            && (self.socket().map(|s| s.is_stale()).unwrap_or(true)
                 || self
                     .last_health
                     .map(|l| l.elapsed() > rebind_timeout)
@@ -311,7 +326,7 @@ impl poll::Reactor for Server {
             }
         }
 
-        if let Some(last_health) = self.socket().last_health() {
+        if let Some(last_health) = self.socket().and_then(|s| s.last_health()) {
             self.last_health = Some(last_health);
         }
 

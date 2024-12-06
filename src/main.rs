@@ -75,7 +75,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         info!(
             "Mini virtual tunneling server on {:}, interface: {:}.",
-            rt.socket().local_addr()?,
+            rt.socket()
+                .ok_or(std::io::Error::other("socket not created"))
+                .and_then(|s| s.local_addr())
+                .map(|v| v.to_string())
+                .unwrap_or_else(|_| "<NA>".to_string()),
             &tun_name
         );
 

@@ -11,17 +11,17 @@ pub struct Runtime {
     pub(crate) tun_fd: OwnedFd,
     pub(crate) control_fd: Option<UnixListener>,
     pub(crate) exit_signal: Option<OwnedFd>,
-    pub(crate) socket: Box<Socket>,
+    pub(crate) socket: Option<Box<Socket>>,
     pub(crate) socket_factory: Option<Box<dyn SocketFactory>>,
 }
 impl Runtime {
     pub fn with_socket(&mut self, s: Box<Socket>) -> &mut Self {
-        self.socket = s;
+        self.socket = Some(s);
         self
     }
 
-    pub fn socket(&self) -> &Socket {
-        &*self.socket
+    pub fn socket(&self) -> Option<&Socket> {
+        self.socket.as_deref()
     }
 }
 
@@ -60,7 +60,17 @@ impl RuntimeBuilder {
 
         let socket = self
             .socket
-            .map_or_else(|| socket_factory.create_socket(), Ok)?;
+            .take()
+            .map_or_else(|| socket_factory.create_socket(), Ok)
+            .map(Some)
+            .or_else(|e| {
+                if self.config.wait_dns {
+                    log::warn!("waiting network ready...");
+                    Ok(None)
+                } else {
+                    Err(e)
+                }
+            })?;
 
         Ok(Runtime {
             tun_fd: self.tun_fd.expect("tun fd not set"),
