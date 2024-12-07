@@ -8,58 +8,83 @@ use std::time::{Duration, Instant};
 pub use rndz::SocketConfigure;
 
 pub struct RndzSocket {
-    rndz: rndz::Client,
-    socket: Option<UdpSocket>,
+    rndz: Option<rndz::Client>,
+    socket: UdpSocket,
 }
 
-impl RndzSocket {
-    pub fn new(
-        server: &str,
-        id: &str,
-        local_addr: Option<SocketAddr>,
-        sk_cfg: Option<Box<dyn SocketConfigure>>,
-    ) -> Result<Self> {
-        let rndz = rndz::Client::new(server, id, local_addr, sk_cfg)?;
-        Self::_new(rndz)
+pub struct RndzSocketBuilder {
+    server: String,
+    id: String,
+    local_addr: Option<SocketAddr>,
+    sk_cfg: Option<Box<dyn SocketConfigure>>,
+}
+
+impl RndzSocketBuilder {
+    pub fn new(server: String, id: String) -> Self {
+        Self {
+            server,
+            id,
+            local_addr: None,
+            sk_cfg: None,
+        }
+    }
+    pub fn with_local_address(&mut self, local_addr: Option<SocketAddr>) -> &mut Self {
+        self.local_addr = local_addr;
+        self
     }
 
-    fn _new(rndz: rndz::Client) -> Result<Self> {
-        Ok(Self { rndz, socket: None })
+    pub fn with_socket_configure(&mut self, sk_cfg: Option<Box<dyn SocketConfigure>>) -> &mut Self {
+        self.sk_cfg = sk_cfg;
+        self
     }
 
-    pub fn connect(&mut self, target_id: &str) -> Result<()> {
-        self.socket = Some(self.rndz.connect(target_id)?);
-        Ok(())
+    fn into_rndz(self) -> Result<rndz::Client> {
+        rndz::Client::new(&self.server, &self.id, self.local_addr, self.sk_cfg)
     }
 
-    pub fn listen(&mut self) -> Result<()> {
-        self.socket = Some(self.rndz.listen()?);
-        Ok(())
+    pub fn connect(self, target_id: &str) -> Result<RndzSocket> {
+        let socket = self.into_rndz()?.connect(target_id)?;
+        Ok(RndzSocket { rndz: None, socket })
+    }
+
+    pub fn listen(self) -> Result<RndzSocket> {
+        let mut rndz = self.into_rndz()?;
+        let socket = rndz.listen()?;
+        Ok(RndzSocket {
+            rndz: Some(rndz),
+            socket,
+        })
     }
 }
 
 impl Deref for RndzSocket {
     type Target = UdpSocket;
     fn deref(&self) -> &Self::Target {
-        self.socket.as_ref().expect("Socket is not connected")
+        &self.socket
     }
 }
 
 impl DerefMut for RndzSocket {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.socket.as_mut().expect("Socket is not connected")
+        &mut self.socket
     }
 }
 
 impl XSocket for RndzSocket {
     fn is_stale(&self) -> bool {
         self.rndz
-            .last_pong()
+            .as_ref()
+            .and_then(|r| r.last_pong())
             .map(|v| v.elapsed() > Duration::from_secs(60))
             .unwrap_or(false)
     }
 
     fn last_health(&self) -> Option<Instant> {
-        self.rndz.last_pong()
+        self.rndz.as_ref().and_then(|r| r.last_pong())
+    }
+
+    fn connect(&self, _: &str) -> std::io::Result<()> {
+        //self.socket is already connected
+        Ok(())
     }
 }

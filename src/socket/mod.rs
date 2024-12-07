@@ -5,6 +5,8 @@ pub use native::NativeSocket;
 mod rndz;
 #[cfg(feature = "holepunch")]
 pub use self::rndz::RndzSocket;
+#[cfg(feature = "holepunch")]
+pub use self::rndz::RndzSocketBuilder;
 
 use std::net::UdpSocket;
 use std::ops::DerefMut;
@@ -20,6 +22,7 @@ pub trait XSocket: DerefMut<Target = UdpSocket> {
     fn last_health(&self) -> Option<Instant> {
         None
     }
+    fn connect(&self, dst: &str) -> std::io::Result<()>;
 }
 
 pub type Socket = dyn XSocket;

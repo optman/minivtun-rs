@@ -22,4 +22,8 @@ impl DerefMut for NativeSocket {
     }
 }
 
-impl XSocket for NativeSocket {}
+impl XSocket for NativeSocket {
+    fn connect(&self, dst: &str) -> std::io::Result<()> {
+        self.0.connect(dst)
+    }
+}

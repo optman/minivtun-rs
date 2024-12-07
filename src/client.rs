@@ -54,7 +54,7 @@ impl Client {
             if let Some(s) = self.socket() {
                 //ignore failure
                 let _ = s
-                    .connect(build_server_addr(server_addr))
+                    .connect(&build_server_addr(server_addr))
                     .inspect_err(|e| warn!("{:?}", e));
             }
         }
@@ -304,7 +304,7 @@ impl poll::Reactor for Client {
                 if let Some(s) = self.socket() {
                     //ignore failure
                     let _ = s
-                        .connect(build_server_addr(server_addr))
+                        .connect(&build_server_addr(server_addr))
                         .map_err(|e| warn!("{:?}", e));
                 }
             }

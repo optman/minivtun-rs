@@ -1,5 +1,5 @@
 use super::{SocketConfigure, SocketFactory};
-use crate::{Config, Error, RndzSocket, Socket};
+use crate::{Config, Error, RndzSocket, RndzSocketBuilder, Socket};
 use std::rc::Rc;
 
 struct SharedSocketConfigure {
@@ -21,26 +21,28 @@ impl SocketFactory for RndzSocketFacoty {
     fn create_socket(&self) -> Result<Box<Socket>, Error> {
         let config = &self.config;
         let rndz = config.rndz.as_ref().expect("rndz config not set");
-        let server = &rndz.server;
-        let id = &rndz.local_id;
         let builder = || -> Result<RndzSocket, Error> {
             let sk_cfg = self.sk_cfg.clone().map(|sk_cfg| {
                 let sk_cfg = SharedSocketConfigure { sk_cfg };
                 Box::new(sk_cfg) as Box<dyn SocketConfigure>
             });
 
-            let mut socket =
-                RndzSocket::new(server, id, config.listen_addr, sk_cfg).inspect_err(|e| {
-                    log::error!("create rndz socket fail, {:?}", e);
-                })?;
+            let mut builder = RndzSocketBuilder::new(rndz.server.clone(), rndz.local_id.clone());
+            builder
+                .with_socket_configure(sk_cfg)
+                .with_local_address(config.listen_addr);
 
-            if let Some(ref remote_id) = rndz.remote_id {
-                socket.connect(remote_id).inspect_err(|e| {
-                    log::error!("rndz connect fail, {:}", e);
-                })?;
-            } else {
-                socket.listen()?;
-            }
+            let build = || {
+                if let Some(ref remote_id) = rndz.remote_id {
+                    builder.connect(remote_id)
+                } else {
+                    builder.listen()
+                }
+            };
+
+            let socket = build().inspect_err(|e| {
+                log::error!("rndz create socket fail, {:}", e);
+            })?;
 
             Ok(socket)
         };
