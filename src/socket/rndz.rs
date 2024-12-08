@@ -28,12 +28,12 @@ impl RndzSocketBuilder {
             sk_cfg: None,
         }
     }
-    pub fn with_local_address(&mut self, local_addr: Option<SocketAddr>) -> &mut Self {
+    pub fn with_local_address(mut self, local_addr: Option<SocketAddr>) -> Self {
         self.local_addr = local_addr;
         self
     }
 
-    pub fn with_socket_configure(&mut self, sk_cfg: Option<Box<dyn SocketConfigure>>) -> &mut Self {
+    pub fn with_socket_configure(mut self, sk_cfg: Option<Box<dyn SocketConfigure>>) -> Self {
         self.sk_cfg = sk_cfg;
         self
     }
