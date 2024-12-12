@@ -36,6 +36,7 @@ pub struct Config {
     #[cfg(feature = "holepunch")]
     pub rndz: Option<rndz::Config>,
     pub info: bool,
+    pub pre_resolve_dns: bool,
 }
 
 impl Config {

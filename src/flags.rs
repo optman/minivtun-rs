@@ -3,7 +3,11 @@ use ipnet::IpNet;
 #[cfg(feature = "holepunch")]
 use minivtun::config::rndz;
 use minivtun::{cryptor, Config, Error};
-use std::{net::IpAddr, result::Result, time::Duration};
+use std::{
+    net::{IpAddr, ToSocketAddrs},
+    result::Result,
+    time::Duration,
+};
 
 const DEFAULT_CIPHER: &str = "aes-128";
 
@@ -37,7 +41,8 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         .arg(Arg::from_usage("-F, --fwmark [fwmark_num]           'fwmark set on vpn traffic'"))
         .arg(Arg::from_usage("-w, --wait-dns                      'wait for DNS resolve ready after service started'"))
         .arg(Arg::from_usage("    --rebind                        'rebind socket before reconnect'"))
-        .arg(Arg::from_usage("-i, --info                          'view current tunnel info"))
+        .arg(Arg::from_usage("-i, --info                          'view current tunnel info'"))
+        .arg(Arg::from_usage("    --pre-resolve-dns               'resolve dns at start and save for reconnect'"))
         ;
     #[cfg(feature = "holepunch")]
     let app = {
@@ -175,5 +180,44 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
     config.rebind = matches.is_present("rebind");
     config.info = matches.is_present("info");
 
+    config.pre_resolve_dns = matches.is_present("pre-resolve-dns");
+    if config.pre_resolve_dns {
+        if let Some(ref mut addrs) = config.server_addrs {
+            for v in addrs.iter_mut() {
+                *v = resolve_dns(v)?;
+            }
+        }
+
+        if let Some(ref mut rndz) = config.rndz {
+            rndz.server = resolve_dns(&rndz.server)?;
+        }
+    }
+
     Ok(())
+}
+
+pub(crate) fn resolve_dns(svr_addr: &str) -> Result<String, Error> {
+    let parts: Vec<&str> = svr_addr.rsplitn(2, ':').collect();
+    if parts.len() != 2 {
+        return Err(Error::Other(
+            "Invalid address format. Use 'domain/ip:port'.".to_owned(),
+        ));
+    }
+
+    let port = parts[0]; // can be a range such as 1000-2000
+    let domain_or_ip = parts[1];
+    let dummy_svr_addr = format!("{}:80", domain_or_ip);
+
+    match dummy_svr_addr.to_socket_addrs() {
+        Ok(mut addrs) => {
+            if let Some(socket_addr) = addrs.next() {
+                return Ok(format!("{}:{}", socket_addr.ip(), port));
+            }
+            Err(Error::Other(format!(
+                "No addresses found for {}",
+                domain_or_ip
+            )))
+        }
+        Err(e) => Err(e.into()),
+    }
 }
