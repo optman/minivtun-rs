@@ -1,24 +1,7 @@
-//            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
-//                    Version 2, December 2004
-//
-// Copyleft (ↄ) meh. <meh@schizofreni.co> | http://meh.schizofreni.co
-//
-// Everyone is permitted to copy and distribute verbatim or modified
-// copies of this license document, and changing it is allowed as long
-// as the name is changed.
-//
-//            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
-//   TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
-//
-//  0. You just DO WHAT THE FUCK YOU WANT TO.
-
-use std::fmt;
-
-use packet::Buffer;
-
 use crate::error::Result;
-
+use packet::Buffer;
 use std::borrow::Cow;
+use std::fmt;
 
 /// A finalizer used by builders to complete building the packet, this is
 /// usually used to calculate the checksum and update length fields after the
@@ -64,31 +47,35 @@ impl<'a> Finalization<'a> {
 
     /// Finalize a buffer.
     pub fn finalize(self, buffer: &mut [u8]) -> Result<Cow<'_, [u8]>> {
-        //NOTE: The code in this block handles the first borrow efficiently, but not the intermediate borrow.
-        let mut out: Option<Cow<'_, [u8]>> = None;
-        for finalizer in self.0.into_iter()
-        /*.rev()*/
-        {
-            let inner_out = match out {
-                None => match finalizer.finalize(buffer)? {
-                    Cow::Borrowed(_) => None,
-                    Cow::Owned(b) => Some(Cow::Owned(b)),
-                },
-                //NOTE:out.to_mut() would convert a Cow::Borrowed to Cow::Owned, that is not efficency.
-                Some(ref mut out) => Some(finalizer.finalize(out.to_mut())?),
-            };
-
-            if let Some(Cow::Owned(b)) = inner_out {
-                out = Some(Cow::Owned(b));
-            }
-        }
-
-        let out = match out {
-            None => Cow::Borrowed(buffer),
-            Some(out) => Cow::Owned(out.into_owned()),
-        };
-
-        Ok(out)
+        // Process finalizers in sequence, only allocating when necessary
+        self.0
+            .into_iter()
+            .try_fold(Cow::Borrowed(buffer), |acc, finalizer| {
+                match acc {
+                    // For borrowed data, use unsafe to get mutable reference without copying
+                    Cow::Borrowed(buf) => {
+                        #[allow(invalid_reference_casting)]
+                        let buf_mut = unsafe {
+                            // SAFETY: We know the buffer is mutable from the original &mut parameter,
+                            // and we have exclusive access to it through the Cow
+                            &mut *(buf as *const [u8] as *mut [u8])
+                        };
+                        finalizer.finalize(buf_mut)
+                    }
+                    // If we've already allocated, work with the owned data
+                    Cow::Owned(mut owned) => {
+                        let result = finalizer.finalize(&mut owned)?;
+                        match result {
+                            Cow::Borrowed(borrowed) => {
+                                let len = borrowed.len();
+                                owned.truncate(len);
+                                Ok(Cow::Owned(owned))
+                            }
+                            Cow::Owned(new_owned) => Ok(Cow::Owned(new_owned)),
+                        }
+                    }
+                }
+            })
     }
 }
 
@@ -98,13 +85,6 @@ impl<'a> IntoIterator for Finalization<'a> {
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
-    }
-}
-
-#[allow(clippy::from_over_into)]
-impl<'a> Into<Vec<&'a dyn Finalizer>> for Finalization<'a> {
-    fn into(self) -> Vec<&'a dyn Finalizer> {
-        self.0
     }
 }
 
