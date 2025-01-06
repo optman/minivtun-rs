@@ -64,6 +64,7 @@ impl<'a> Finalization<'a> {
 
     /// Finalize a buffer.
     pub fn finalize(self, buffer: &mut [u8]) -> Result<Cow<'_, [u8]>> {
+        //NOTE: The code in this block handles the first borrow efficiently, but not the intermediate borrow.
         let mut out: Option<Cow<'_, [u8]>> = None;
         for finalizer in self.0.into_iter()
         /*.rev()*/
@@ -73,6 +74,7 @@ impl<'a> Finalization<'a> {
                     Cow::Borrowed(_) => None,
                     Cow::Owned(b) => Some(Cow::Owned(b)),
                 },
+                //NOTE:out.to_mut() would convert a Cow::Borrowed to Cow::Owned, that is not efficency.
                 Some(ref mut out) => Some(finalizer.finalize(out.to_mut())?),
             };
 
