@@ -39,8 +39,7 @@ impl Builder {
         secret: A,
         cipher: B,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        
-        let cipher = match cipher.as_ref() {
+        let cipher = match cipher.as_ref().to_lowercase().as_str() {
             "plain" => Cipher::Plain,
             "aes-128" => Cipher::Aes128,
             "aes-256" => Cipher::Aes256,

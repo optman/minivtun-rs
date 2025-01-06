@@ -52,10 +52,7 @@ impl Config {
     }
 
     pub fn with_server_addr(&mut self, addr: String) -> &mut Self {
-        if self.server_addrs.is_none() {
-            self.server_addrs = Some(Vec::new());
-        }
-        self.server_addrs.as_mut().unwrap().push(addr);
+        self.server_addrs.get_or_insert_with(Vec::new).push(addr);
         self
     }
 
