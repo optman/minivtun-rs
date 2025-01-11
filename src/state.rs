@@ -32,7 +32,7 @@ impl State {
         self.xmit_seq.wrapping_add(1)
     }
 
-    pub fn gen_id(&mut self) -> u32 {
+    pub fn gen_id(&self) -> u32 {
         thread_rng().next_u32()
     }
 }

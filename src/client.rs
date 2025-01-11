@@ -13,6 +13,7 @@ use crate::{
 use log::{debug, info, trace, warn};
 use nix::unistd::{read, write};
 use size::Size;
+use std::cell::RefCell;
 use std::fmt::Formatter;
 use std::io::Write;
 use std::mem::MaybeUninit;
@@ -30,7 +31,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 pub struct Client {
     pub(crate) config: Rc<Config>,
     pub(crate) rt: Runtime,
-    pub(crate) state: State,
+    pub(crate) state: RefCell<State>,
     pub(crate) server_index: usize,
 }
 
@@ -44,7 +45,7 @@ impl Client {
         })
     }
 
-    pub fn run(mut self) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         if let Some(server_addr) = self
             .config
             .server_addrs
@@ -58,7 +59,7 @@ impl Client {
                     .inspect_err(|e| warn!("{:?}", e));
             }
         }
-        self.state.last_connect = Some(Instant::now());
+        self.state.borrow_mut().last_connect = Some(Instant::now());
 
         poll::poll(
             self.tun().as_raw_fd(),
@@ -76,12 +77,11 @@ impl Client {
         &self.rt.tun_fd
     }
 
-    fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result<()> {
-        self.state.tx_bytes += pkt.len() as u64;
+    fn forward_remote(&self, kind: Kind, pkt: &[u8]) -> Result<()> {
+        self.state.borrow_mut().tx_bytes += pkt.len() as u64;
 
-        let buf = msg::Builder::default()
-            .cryptor(&self.config.cryptor)?
-            .seq(self.state.next_seq())?
+        let buf = self
+            .new_msg()?
             .ip_data()?
             .kind(kind)?
             .payload(pkt)?
@@ -95,8 +95,8 @@ impl Client {
         Ok(())
     }
 
-    fn forward_local(&mut self, pkt: &[u8]) -> Result<()> {
-        self.state.rx_bytes += pkt.len() as u64;
+    fn forward_local(&self, pkt: &[u8]) -> Result<()> {
+        self.state.borrow_mut().rx_bytes += pkt.len() as u64;
 
         match pkt[0] >> 4 {
             4 | 6 => {
@@ -109,12 +109,11 @@ impl Client {
         Ok(())
     }
 
-    fn send_echo(&mut self) -> Result<()> {
-        let mut builder = msg::Builder::default()
-            .cryptor(&self.config.cryptor)?
-            .seq(self.state.next_seq())?
+    fn send_echo(&self) -> Result<()> {
+        let mut builder = self
+            .new_msg()?
             .echo_req()?
-            .id(self.state.gen_id())?;
+            .id(self.state.borrow().gen_id())?;
 
         if let Some(ref addr4) = self.config.loc_tun_in {
             builder = builder.ipv4_addr(addr4.addr())?;
@@ -130,6 +129,14 @@ impl Client {
         }
 
         Ok(())
+    }
+
+    fn new_msg(&self) -> Result<msg::Builder> {
+        let builder = msg::Builder::default()
+            .cryptor(&self.config.cryptor)?
+            .seq(self.state.borrow_mut().next_seq())?;
+
+        Ok(builder)
     }
 }
 
@@ -176,7 +183,7 @@ impl std::fmt::Display for Client {
         }
 
         writeln!(f, "stats:")?;
-        let state = &self.state;
+        let state = self.state.borrow();
         writeln!(
             f,
             "{:<15} {}",
@@ -206,7 +213,7 @@ impl poll::Reactor for Client {
         self.socket().map(|s| s.as_raw_fd())
     }
 
-    fn tunnel_recv(&mut self) -> Result<()> {
+    fn tunnel_recv(&self) -> Result<()> {
         let mut buf = unsafe { MaybeUninit::assume_init(MaybeUninit::<[u8; 1500]>::uninit()) };
         let size = read(self.tun().as_raw_fd(), &mut buf)?;
         match buf[0] >> 4 {
@@ -218,7 +225,7 @@ impl poll::Reactor for Client {
         Ok(())
     }
 
-    fn network_recv(&mut self) -> Result<()> {
+    fn network_recv(&self) -> Result<()> {
         let s = match self.socket() {
             Some(s) => s,
             None => return Ok(()),
@@ -232,15 +239,15 @@ impl poll::Reactor for Client {
                     Ok(msg) => match msg.op() {
                         Ok(Op::EchoAck) => {
                             debug!("received echo ack");
-                            self.state.last_ack = Some(Instant::now());
+                            self.state.borrow_mut().last_ack = Some(Instant::now());
                         }
                         Ok(Op::IpData) => {
-                            self.state.last_rx = Some(Instant::now());
+                            self.state.borrow_mut().last_rx = Some(Instant::now());
                             self.forward_local(ipdata::Packet::new(msg.payload()?)?.payload()?)?;
                         }
                         Ok(Op::EchoReq) => {
                             debug!("received echo req(from old version server?)");
-                            self.state.last_ack = Some(Instant::now());
+                            self.state.borrow_mut().last_ack = Some(Instant::now());
                         }
                         _ => debug!("unexpected msg {:?}", msg.op()),
                     },
@@ -276,7 +283,7 @@ impl poll::Reactor for Client {
             last_rx,
             last_echo,
             ..
-        } = self.state;
+        } = *self.state.borrow();
 
         if check_timeout(last_ack, &reconnect_timeout)
             && check_timeout(last_rx, &reconnect_timeout)
@@ -284,7 +291,7 @@ impl poll::Reactor for Client {
         {
             if rebind && check_timeout(last_rebind, &rebind_timeout) {
                 info!("Rebind...");
-                self.state.last_rebind = Some(Instant::now());
+                self.state.borrow_mut().last_rebind = Some(Instant::now());
                 if let Some(ref factory) = self.rt.socket_factory {
                     match factory.create_socket() {
                         Ok(socket) => {
@@ -297,7 +304,7 @@ impl poll::Reactor for Client {
             };
 
             info!("Reconnect...");
-            self.state.last_connect = Some(Instant::now());
+            self.state.borrow_mut().last_connect = Some(Instant::now());
             if let Some(server_addrs) = &self.config.server_addrs {
                 self.server_index = (self.server_index + 1) % server_addrs.len();
                 let server_addr = &server_addrs[self.server_index];
@@ -311,14 +318,14 @@ impl poll::Reactor for Client {
         }
 
         if check_timeout(last_echo, &keepalive_interval) {
-            self.state.last_echo = Some(Instant::now());
+            self.state.borrow_mut().last_echo = Some(Instant::now());
             self.send_echo()?;
         }
 
         Ok(())
     }
 
-    fn handle_control_connection(&mut self, fd: RawFd) {
+    fn handle_control_connection(&self, fd: RawFd) {
         let mut us = unsafe { UnixStream::from_raw_fd(fd) };
         //ignore failure
         let _ = us.write(self.to_string().as_bytes());

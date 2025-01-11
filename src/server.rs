@@ -5,13 +5,14 @@ use crate::{
     msg,
     msg::{builder::Builder, ipdata, ipdata::Kind, Op},
     poll,
-    route::RouteTable,
+    route::{RefRA, RouteTable},
     socket::Socket,
     Runtime,
 };
 use log::{debug, info, trace, warn};
 use nix::unistd::{read, write};
 use size::Size;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::io::Write;
@@ -24,7 +25,7 @@ use std::os::unix::net::UnixStream;
 use std::rc::Rc;
 use std::time::Instant;
 
-type Result = std::result::Result<(), Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Default)]
 pub struct Stat {
@@ -35,8 +36,8 @@ pub struct Stat {
 pub struct Server {
     config: Rc<Config>,
     rt: Runtime,
-    stats: HashMap<IpAddr, Stat>,
-    route: RouteTable,
+    stats: RefCell<HashMap<IpAddr, Stat>>,
+    route: RefCell<RouteTable>,
     last_rebind: Option<Instant>,
     last_health: Option<Instant>,
 }
@@ -53,10 +54,10 @@ impl Server {
         })
     }
 
-    pub fn run(mut self) -> Result {
+    pub fn run(self) -> Result<()> {
         for (net, gw) in &self.config.routes {
             match gw {
-                Some(gw) => self.route.add_route(net, gw),
+                Some(gw) => self.route.borrow_mut().add_route(net, gw),
                 None => return Err("route gw must be set in server mode!".into()),
             }
         }
@@ -77,19 +78,19 @@ impl Server {
         &self.rt.tun_fd
     }
 
-    fn forward_remote(&mut self, kind: Kind, pkt: &[u8]) -> Result {
+    fn forward_remote(&self, kind: Kind, pkt: &[u8]) -> Result<()> {
         let dst = dest_ip(pkt)?;
-        let va = self
-            .route
+        let mut route = self.route.borrow_mut();
+        let va = route
             .get_route(&dst)
             .ok_or_else(|| crate::error::Error::NoRoute(dst.to_string()))?;
 
-        let stat = self.stats.entry(dst).or_default();
+        let mut stats = self.stats.borrow_mut();
+        let stat = stats.entry(dst).or_default();
         stat.tx_bytes += pkt.len() as u64;
 
-        let buf = msg::Builder::default()
-            .cryptor(&self.config.cryptor)?
-            .seq(va.ra.next_seq())?
+        let buf = self
+            .new_msg(&va.ra)?
             .ip_data()?
             .kind(kind)?
             .payload(pkt)?
@@ -105,14 +106,15 @@ impl Server {
         Ok(())
     }
 
-    fn forward_local(&mut self, ra: &SocketAddr, pkt: &[u8]) -> Result {
+    fn forward_local(&self, ra: &SocketAddr, pkt: &[u8]) -> Result<()> {
         let src = source_ip(pkt)?;
-        let ra = self.route.get_or_add_ra(ra).clone();
-        if self.route.add_or_update_va(&src, ra).is_none() {
+        let ra = self.route.borrow_mut().get_or_add_ra(ra).clone();
+        if self.route.borrow_mut().add_or_update_va(&src, ra).is_none() {
             debug!("unknown src {:}", src);
             return Ok(());
         }
-        let stat = self.stats.entry(src).or_default();
+        let mut stats = self.stats.borrow_mut();
+        let stat = stats.entry(src).or_default();
         stat.rx_bytes += pkt.len() as u64;
 
         match pkt[0] >> 4 {
@@ -129,25 +131,25 @@ impl Server {
     }
 
     fn handle_echo_req<T: AsRef<[u8]>>(
-        &mut self,
+        &self,
         src: SocketAddr,
         pkt: msg::echo::Packet<T>,
-    ) -> Result {
-        let ra = self.route.get_or_add_ra(&src).clone();
+    ) -> Result<()> {
+        let ra = self.route.borrow_mut().get_or_add_ra(&src).clone();
 
         let (va4, va6) = pkt.ip_addr()?;
         if !va4.is_unspecified() {
-            self.route.add_or_update_va(&va4.into(), ra.clone());
+            self.route
+                .borrow_mut()
+                .add_or_update_va(&va4.into(), ra.clone());
         }
         if !va6.is_unspecified() {
-            self.route.add_or_update_va(&va6.into(), ra.clone());
+            self.route
+                .borrow_mut()
+                .add_or_update_va(&va6.into(), ra.clone());
         }
 
-        let mut builder = msg::Builder::default()
-            .cryptor(&self.config.cryptor)?
-            .seq(ra.next_seq())?
-            .echo_ack()?
-            .id(pkt.id()?)?;
+        let mut builder = self.new_msg(&ra)?.echo_ack()?.id(pkt.id()?)?;
 
         if let Some(ref addr4) = self.config.loc_tun_in {
             builder = builder.ipv4_addr(addr4.addr())?;
@@ -165,6 +167,14 @@ impl Server {
         }
 
         Ok(())
+    }
+
+    fn new_msg(&self, ra: &RefRA) -> Result<msg::Builder> {
+        let builder = msg::Builder::default()
+            .cryptor(&self.config.cryptor)?
+            .seq(ra.next_seq())?;
+
+        Ok(builder)
     }
 }
 
@@ -205,10 +215,11 @@ impl Display for Server {
             )?;
         }
 
-        write!(f, "{:}", self.route)?;
+        write!(f, "{:}", self.route.borrow())?;
 
         writeln!(f, "stats:")?;
-        let mut stat = self.stats.iter().collect::<Vec<_>>();
+        let stats = self.stats.borrow();
+        let mut stat = stats.iter().collect::<Vec<_>>();
         stat.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
         for s in stat {
             writeln!(
@@ -229,7 +240,7 @@ impl poll::Reactor for Server {
         self.socket().map(|s| s.as_raw_fd())
     }
 
-    fn tunnel_recv(&mut self) -> Result {
+    fn tunnel_recv(&self) -> Result<()> {
         let mut buf =
             unsafe { mem::MaybeUninit::assume_init(mem::MaybeUninit::<[u8; 1500]>::uninit()) };
         let size = read(self.tun().as_raw_fd(), &mut buf)?;
@@ -254,7 +265,7 @@ impl poll::Reactor for Server {
         Ok(())
     }
 
-    fn network_recv(&mut self) -> Result {
+    fn network_recv(&self) -> Result<()> {
         let s = match self.socket() {
             Some(s) => s,
             None => return Ok(()),
@@ -292,7 +303,7 @@ impl poll::Reactor for Server {
         Ok(())
     }
 
-    fn keepalive(&mut self) -> Result {
+    fn keepalive(&mut self) -> Result<()> {
         let Config {
             rebind,
             rebind_timeout,
@@ -332,12 +343,12 @@ impl poll::Reactor for Server {
 
         let Self { route, stats, .. } = self;
 
-        route.prune(self.config.client_timeout);
-        stats.retain(|k, _| route.contains(k));
+        route.get_mut().prune(self.config.client_timeout);
+        stats.get_mut().retain(|k, _| route.borrow().contains(k));
         Ok(())
     }
 
-    fn handle_control_connection(&mut self, fd: RawFd) {
+    fn handle_control_connection(&self, fd: RawFd) {
         let mut us = unsafe { UnixStream::from_raw_fd(fd) };
         // ignore failure
         let _ = us.write(self.to_string().as_bytes());

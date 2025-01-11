@@ -11,9 +11,9 @@ type Result = std::result::Result<(), Box<dyn Error>>;
 pub trait Reactor {
     fn socket_fd(&self) -> Option<RawFd>;
     fn keepalive(&mut self) -> Result;
-    fn tunnel_recv(&mut self) -> Result;
-    fn network_recv(&mut self) -> Result;
-    fn handle_control_connection(&mut self, _fd: RawFd);
+    fn tunnel_recv(&self) -> Result;
+    fn network_recv(&self) -> Result;
+    fn handle_control_connection(&self, fd: RawFd);
 }
 
 pub fn poll<T: Reactor>(
