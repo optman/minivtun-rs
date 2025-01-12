@@ -1,45 +1,34 @@
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use crate::error::{Error, Result};
-use crate::msg::builder::{Builder as Build, Finalization};
+use crate::msg::builder::Builder as Build;
 use byteorder::{BigEndian, ByteOrder};
 use packet::{buffer::Dynamic, Buffer};
 
 const PACKET_SIZE: usize = 24;
 
-pub struct Builder<'a, B: Buffer = Dynamic> {
+pub struct Builder<B: Buffer = Dynamic> {
     buffer: B,
-    finalizer: Finalization<'a>,
 }
 
-impl<'a, B: Buffer> Build<'a, B> for Builder<'a, B> {
-    fn with(mut buf: B) -> Result<Self> {
-        buf.next(PACKET_SIZE)?;
-        Ok(Builder {
-            buffer: buf,
-            finalizer: Default::default(),
-        })
-    }
-
-    fn finalizer(&mut self) -> &mut Finalization<'a> {
-        &mut self.finalizer
-    }
-
-    fn build(self) -> Result<Vec<u8>> {
-        Ok(self
-            .finalizer
-            .finalize(self.buffer.into_inner().as_mut())?
-            .into_owned())
-    }
-}
-
-impl Default for Builder<'_, Dynamic> {
+impl Default for Builder<Dynamic> {
     fn default() -> Self {
         Builder::with(Dynamic::default()).unwrap()
     }
 }
 
-impl<B: Buffer> Builder<'_, B> {
+impl<B: Buffer> Build<B> for Builder<B> {
+    fn with(mut buf: B) -> Result<Self> {
+        buf.next(PACKET_SIZE)?;
+        Ok(Builder { buffer: buf })
+    }
+
+    fn build(self) -> Result<Vec<u8>> {
+        Ok(self.buffer.into_inner().as_mut().to_owned())
+    }
+}
+
+impl<B: Buffer> Builder<B> {
     pub fn id(mut self, id: u32) -> Result<Self> {
         BigEndian::write_u32(&mut self.buffer.data_mut()[20..], id);
         Ok(self)

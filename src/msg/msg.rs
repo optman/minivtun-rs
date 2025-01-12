@@ -1,10 +1,9 @@
 use crate::cryptor::Cryptor;
 use crate::error::{Error, Result};
-use crate::msg::builder::{Builder as Build, Finalization, Finalizer};
+use crate::msg::builder::Builder as Build;
 use byteorder::{BigEndian, ByteOrder};
 use num_enum::TryFromPrimitive;
 use packet::{buffer::Dynamic, Buffer};
-use std::borrow::Cow;
 use std::convert::TryFrom;
 
 #[derive(PartialEq, Eq, Debug, TryFromPrimitive)]
@@ -18,47 +17,37 @@ pub enum Op {
 
 const HEADER_SIZE: usize = 20;
 
-pub struct Builder<'a, B: Buffer = Dynamic> {
+pub struct Builder<B: Buffer = Dynamic> {
     buffer: B,
     kind: bool,
     payload: bool,
-    finalizer: Finalization<'a>,
 }
 
-impl<'a, B: Buffer> Build<'a, B> for Builder<'a, B> {
+impl Default for Builder<Dynamic> {
+    fn default() -> Self {
+        Self::with(Dynamic::default()).unwrap()
+    }
+}
+
+impl<B: Buffer> Build<B> for Builder<B> {
     fn with(mut buf: B) -> Result<Self> {
         buf.next(HEADER_SIZE)?;
         Ok(Builder {
             buffer: buf,
             kind: false,
             payload: false,
-            finalizer: Default::default(),
         })
-    }
-
-    fn finalizer(&mut self) -> &mut Finalization<'a> {
-        &mut self.finalizer
     }
 
     fn build(self) -> Result<Vec<u8>> {
         if !self.kind | !self.payload {
             Err(Error::InvalidPacket)?
         }
-
-        Ok(self
-            .finalizer
-            .finalize(self.buffer.into_inner().as_mut())?
-            .into_owned())
+        Ok(self.buffer.into_inner().as_mut().to_owned())
     }
 }
 
-impl<'a> Default for Builder<'a, Dynamic> {
-    fn default() -> Self {
-        Builder::with(Dynamic::default()).unwrap()
-    }
-}
-
-impl<'a, B: Buffer> Builder<'a, B> {
+impl<B: Buffer> Builder<B> {
     pub fn seq(mut self, seq: u16) -> Result<Self> {
         BigEndian::write_u16(&mut self.buffer.data_mut()[2..], seq);
         Ok(self)
@@ -87,44 +76,23 @@ impl<'a, B: Buffer> Builder<'a, B> {
         Ok(self)
     }
 
-    pub fn echo_req(self) -> Result<crate::msg::echo::Builder<'a, B>> {
+    pub fn echo_req(self) -> Result<crate::msg::echo::Builder<B>> {
         let new_self = self.op(Op::EchoReq)?;
-        let mut builder = crate::msg::echo::Builder::with(new_self.buffer)?;
-        builder.finalizer().extend(new_self.finalizer);
-
-        Ok(builder)
+        crate::msg::echo::Builder::with(new_self.buffer)
     }
 
-    pub fn echo_ack(self) -> Result<crate::msg::echo::Builder<'a, B>> {
+    pub fn echo_ack(self) -> Result<crate::msg::echo::Builder<B>> {
         let new_self = self.op(Op::EchoAck)?;
-        let mut builder = crate::msg::echo::Builder::with(new_self.buffer)?;
-        builder.finalizer().extend(new_self.finalizer);
-        Ok(builder)
+        crate::msg::echo::Builder::with(new_self.buffer)
     }
 
     pub fn disconnect(self) -> Result<Self> {
         self.op(Op::Disconnect)
     }
 
-    pub fn ip_data(self) -> Result<crate::msg::ipdata::Builder<'a, B>> {
+    pub fn ip_data(self) -> Result<crate::msg::ipdata::Builder<B>> {
         let new_self = self.op(Op::IpData)?;
-        let mut builder = crate::msg::ipdata::Builder::with(new_self.buffer)?;
-        builder.finalizer().extend(new_self.finalizer);
-        Ok(builder)
-    }
-
-    pub fn cryptor(mut self, cryptor: &'a Option<Box<dyn Cryptor>>) -> Result<Self> {
-        if let Some(cryptor) = cryptor {
-            self.finalizer.add(cryptor);
-        }
-        Ok(self)
-    }
-}
-
-impl Finalizer for Box<dyn Cryptor> {
-    fn finalize<'a>(&self, buffer: &'a mut [u8]) -> Result<Cow<'a, [u8]>> {
-        buffer[4..20].copy_from_slice(self.auth_key());
-        Ok(Cow::Owned(self.encrypt_vec(buffer)?))
+        crate::msg::ipdata::Builder::with(new_self.buffer)
     }
 }
 
@@ -143,7 +111,7 @@ impl<B: AsRef<[u8]>> Packet<B> {
 
     pub fn with_cryptor<'a>(
         buffer: &'a mut [u8],
-        cryptor: &Option<Box<dyn Cryptor>>,
+        cryptor: Option<&dyn Cryptor>,
     ) -> Result<Packet<&'a [u8]>> {
         if buffer.as_ref().len() < HEADER_SIZE {
             Err(Error::InvalidPacket)?
@@ -182,7 +150,7 @@ impl<B: AsRef<[u8]>> Packet<B> {
 mod tests {
     use self::super::*;
     use crate::cryptor::Aes128Cryptor;
-    use crate::msg::{echo, ipdata};
+    use crate::msg::{echo, ipdata, BuilderExt, Encryptor};
     use core::iter::repeat;
     use std::convert::TryInto;
 
@@ -190,8 +158,8 @@ mod tests {
     fn test() {
         let key: Vec<u8> = repeat(1).take(16).collect();
         let key: [u8; 16] = key.try_into().unwrap();
-
-        let cryptor: Option<Box<dyn Cryptor>> = Some(Box::new(Aes128Cryptor::new(&key)));
+        let cryptor = Aes128Cryptor::new(&key);
+        let encryptor = Encryptor::new(Some(&cryptor));
 
         let mut buf = Builder::default()
             .seq(1)
@@ -200,33 +168,29 @@ mod tests {
             .unwrap()
             .payload(&[0; 12])
             .unwrap()
-            .cryptor(&cryptor)
-            .unwrap()
-            .build()
+            .transform(&encryptor)
             .unwrap();
 
         assert_eq!(buf.len(), 20 + 12); //align to block size
 
         let buf = &mut buf[..];
-        let p = Packet::<&[u8]>::with_cryptor(buf, &cryptor).unwrap();
+        let p = Packet::<&[u8]>::with_cryptor(buf, Some(&cryptor)).unwrap();
         assert_eq!(p.seq().unwrap(), 1);
 
         let mut buf = Builder::default()
-            .cryptor(&cryptor)
-            .unwrap()
             .seq(1)
             .unwrap()
             .echo_req()
             .unwrap()
             .id(2)
             .unwrap()
-            .build()
+            .transform(&encryptor)
             .unwrap();
 
         assert_eq!(buf.len(), 20 + 24 + 4 /*padding*/);
 
         let buf = &mut buf[..];
-        let p = Packet::<&[u8]>::with_cryptor(buf, &cryptor).unwrap();
+        let p = Packet::<&[u8]>::with_cryptor(buf, Some(&cryptor)).unwrap();
 
         assert_eq!(p.op().unwrap(), Op::EchoReq);
 

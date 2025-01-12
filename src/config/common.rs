@@ -73,6 +73,10 @@ impl Config {
     pub fn rndz(&self) -> Option<&rndz::Config> {
         self.rndz.as_ref()
     }
+
+    pub fn cryptor(&self) -> Option<&dyn cryptor::Cryptor> {
+        self.cryptor.as_deref()
+    }
 }
 
 #[cfg(test)]

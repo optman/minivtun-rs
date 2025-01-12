@@ -1,10 +1,10 @@
 use crate::config::Config;
-use crate::msg;
+use crate::msg::BuilderExt;
+use crate::msg::Encryptor;
 use crate::poll;
 use crate::Runtime;
 use crate::{
-    msg::Op,
-    msg::{builder::Builder, ipdata, ipdata::Kind},
+    msg::{IpDataKind, IpDataPacket, MsgBuilder, MsgPacket, Op},
     state::State,
     util::build_server_addr,
     util::pretty_duration,
@@ -77,15 +77,16 @@ impl Client {
         &self.rt.tun_fd
     }
 
-    fn forward_remote(&self, kind: Kind, pkt: &[u8]) -> Result<()> {
+    fn forward_remote(&self, kind: IpDataKind, pkt: &[u8]) -> Result<()> {
         self.state.borrow_mut().tx_bytes += pkt.len() as u64;
 
+        let enc = Encryptor::new(self.config.cryptor());
         let buf = self
             .new_msg()?
             .ip_data()?
             .kind(kind)?
             .payload(pkt)?
-            .build()?;
+            .transform(&enc)?;
 
         if let Some(s) = self.socket() {
             //ignore failure
@@ -122,19 +123,19 @@ impl Client {
         if let Some(ref addr6) = self.config.loc_tun_in6 {
             builder = builder.ipv6_addr(addr6.addr())?;
         }
+        let enc = Encryptor::new(self.config.cryptor());
+        let buf = builder.transform(&enc)?;
 
         if let Some(s) = self.socket() {
             //ignore failure
-            let _ = s.send(builder.build()?.as_ref());
+            let _ = s.send(&buf);
         }
 
         Ok(())
     }
 
-    fn new_msg(&self) -> Result<msg::Builder> {
-        let builder = msg::Builder::default()
-            .cryptor(&self.config.cryptor)?
-            .seq(self.state.borrow_mut().next_seq())?;
+    fn new_msg(&self) -> Result<MsgBuilder> {
+        let builder = MsgBuilder::default().seq(self.state.borrow_mut().next_seq())?;
 
         Ok(builder)
     }
@@ -217,8 +218,8 @@ impl poll::Reactor for Client {
         let mut buf = unsafe { MaybeUninit::assume_init(MaybeUninit::<[u8; 1500]>::uninit()) };
         let size = read(self.tun().as_raw_fd(), &mut buf)?;
         match buf[0] >> 4 {
-            4 => self.forward_remote(Kind::V4, &buf[..size])?,
-            6 => self.forward_remote(Kind::V6, &buf[..size])?,
+            4 => self.forward_remote(IpDataKind::V4, &buf[..size])?,
+            6 => self.forward_remote(IpDataKind::V6, &buf[..size])?,
             _ => warn!("[INPUT]invalid packet"),
         }
 
@@ -235,7 +236,7 @@ impl poll::Reactor for Client {
         match s.recv_from(&mut buf) {
             Ok((size, src)) => {
                 trace!("receive from  {:}, size {:}", src, size);
-                match msg::Packet::<&[u8]>::with_cryptor(&mut buf[..size], &self.config.cryptor) {
+                match MsgPacket::<&[u8]>::with_cryptor(&mut buf[..size], self.config.cryptor()) {
                     Ok(msg) => match msg.op() {
                         Ok(Op::EchoAck) => {
                             debug!("received echo ack");
@@ -243,7 +244,7 @@ impl poll::Reactor for Client {
                         }
                         Ok(Op::IpData) => {
                             self.state.borrow_mut().last_rx = Some(Instant::now());
-                            self.forward_local(ipdata::Packet::new(msg.payload()?)?.payload()?)?;
+                            self.forward_local(IpDataPacket::new(msg.payload()?)?.payload()?)?;
                         }
                         Ok(Op::EchoReq) => {
                             debug!("received echo req(from old version server?)");

@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use crate::msg::builder::{Builder as Build, Finalization};
+use crate::msg::builder::Builder as Build;
 use byteorder::{BigEndian, ByteOrder};
 use num_enum::TryFromPrimitive;
 use packet::{buffer::Dynamic, Buffer};
@@ -14,47 +14,37 @@ pub enum Kind {
 
 const HEADER_SIZE: usize = 4;
 
-pub struct Builder<'a, B: Buffer = Dynamic> {
+pub struct Builder<B: Buffer = Dynamic> {
     buffer: B,
     kind: bool,
     payload: bool,
-    finalizer: Finalization<'a>,
 }
 
-impl<'a, B: Buffer> Build<'a, B> for Builder<'a, B> {
+impl Default for Builder<Dynamic> {
+    fn default() -> Self {
+        Builder::with(Dynamic::default()).unwrap()
+    }
+}
+
+impl<B: Buffer> Build<B> for Builder<B> {
     fn with(mut buf: B) -> Result<Self> {
         buf.next(HEADER_SIZE)?;
         Ok(Builder {
             buffer: buf,
             kind: false,
             payload: false,
-            finalizer: Default::default(),
         })
-    }
-
-    fn finalizer(&mut self) -> &mut Finalization<'a> {
-        &mut self.finalizer
     }
 
     fn build(self) -> Result<Vec<u8>> {
         if !self.kind | !self.payload {
             Err(Error::InvalidPacket)?
         }
-
-        Ok(self
-            .finalizer
-            .finalize(self.buffer.into_inner().as_mut())?
-            .into_owned())
+        Ok(self.buffer.into_inner().as_mut().to_owned())
     }
 }
 
-impl<'a> Default for Builder<'a, Dynamic> {
-    fn default() -> Self {
-        Builder::with(Dynamic::default()).unwrap()
-    }
-}
-
-impl<'a, B: Buffer> Builder<'a, B> {
+impl<B: Buffer> Builder<B> {
     pub fn kind(mut self, kind: Kind) -> Result<Self> {
         self.kind = true;
         BigEndian::write_u16(&mut self.buffer.data_mut()[0..], kind as u16);

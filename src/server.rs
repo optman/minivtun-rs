@@ -1,9 +1,9 @@
+use crate::msg::{BuilderExt, EchoPacket, Encryptor, IpDataPacket};
 use crate::util::{dest_ip, source_ip};
 use crate::{
     config::Config,
     error::Error,
-    msg,
-    msg::{builder::Builder, ipdata, ipdata::Kind, Op},
+    msg::{IpDataKind, MsgBuilder, MsgPacket, Op},
     poll,
     route::{RefRA, RouteTable},
     socket::Socket,
@@ -78,7 +78,7 @@ impl Server {
         &self.rt.tun_fd
     }
 
-    fn forward_remote(&self, kind: Kind, pkt: &[u8]) -> Result<()> {
+    fn forward_remote(&self, kind: IpDataKind, pkt: &[u8]) -> Result<()> {
         let dst = dest_ip(pkt)?;
         let mut route = self.route.borrow_mut();
         let va = route
@@ -89,12 +89,13 @@ impl Server {
         let stat = stats.entry(dst).or_default();
         stat.tx_bytes += pkt.len() as u64;
 
+        let enc = Encryptor::new(self.config.cryptor());
         let buf = self
             .new_msg(&va.ra)?
             .ip_data()?
             .kind(kind)?
             .payload(pkt)?
-            .build()?;
+            .transform(&enc)?;
 
         let dst = va.ra.addr();
 
@@ -130,11 +131,7 @@ impl Server {
         Ok(())
     }
 
-    fn handle_echo_req<T: AsRef<[u8]>>(
-        &self,
-        src: SocketAddr,
-        pkt: msg::echo::Packet<T>,
-    ) -> Result<()> {
+    fn handle_echo_req<T: AsRef<[u8]>>(&self, src: SocketAddr, pkt: EchoPacket<T>) -> Result<()> {
         let ra = self.route.borrow_mut().get_or_add_ra(&src).clone();
 
         let (va4, va6) = pkt.ip_addr()?;
@@ -159,7 +156,8 @@ impl Server {
             builder = builder.ipv6_addr(addr6.addr())?;
         }
 
-        let buf = builder.build()?;
+        let enc = Encryptor::new(self.config.cryptor());
+        let buf = builder.transform(&enc)?;
 
         if let Some(s) = self.socket() {
             // ignore failure
@@ -169,10 +167,8 @@ impl Server {
         Ok(())
     }
 
-    fn new_msg(&self, ra: &RefRA) -> Result<msg::Builder> {
-        let builder = msg::Builder::default()
-            .cryptor(&self.config.cryptor)?
-            .seq(ra.next_seq())?;
+    fn new_msg(&self, ra: &RefRA) -> Result<MsgBuilder> {
+        let builder = MsgBuilder::default().seq(ra.next_seq())?;
 
         Ok(builder)
     }
@@ -248,13 +244,13 @@ impl poll::Reactor for Server {
             4 => {
                 // ignore failure
                 let _ = self
-                    .forward_remote(Kind::V4, &buf[..size])
+                    .forward_remote(IpDataKind::V4, &buf[..size])
                     .map_err(|e| debug!("forward remote fail. {:?}", e));
             }
             6 => {
                 // ignore failure
                 let _ = self
-                    .forward_remote(Kind::V6, &buf[..size])
+                    .forward_remote(IpDataKind::V6, &buf[..size])
                     .map_err(|e| debug!("forward remote fail. {:?}", e));
             }
             _ => {
@@ -281,13 +277,13 @@ impl poll::Reactor for Server {
         };
 
         trace!("receive from {:}, size {:}", src, size);
-        match msg::Packet::<&[u8]>::with_cryptor(&mut buf[..size], &self.config.cryptor) {
+        match MsgPacket::<&[u8]>::with_cryptor(&mut buf[..size], self.config.cryptor()) {
             Ok(msg) => match msg.op() {
                 Ok(Op::IpData) => {
-                    self.forward_local(&src, ipdata::Packet::new(msg.payload()?)?.payload()?)?;
+                    self.forward_local(&src, IpDataPacket::new(msg.payload()?)?.payload()?)?;
                 }
                 Ok(Op::EchoReq) => {
-                    let echo = msg::echo::Packet::new(msg.payload()?)?;
+                    let echo = EchoPacket::new(msg.payload()?)?;
                     debug!("received echo req {:?}", echo.ip_addr()?);
                     self.handle_echo_req(src, echo)?;
                 }
