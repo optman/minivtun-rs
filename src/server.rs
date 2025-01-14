@@ -1,9 +1,9 @@
-use crate::msg::{BuilderExt, EchoPacket, Encryptor, IpDataPacket};
+use crate::msg::{EchoPacket, IpDataPacket};
 use crate::util::{dest_ip, source_ip};
 use crate::{
     config::Config,
     error::Error,
-    msg::{IpDataKind, MsgBuilder, MsgPacket, Op},
+    msg::{Builder, IpDataKind, MsgBuilder, MsgPacket, Op},
     poll,
     route::{RefRA, RouteTable},
     socket::Socket,
@@ -89,19 +89,13 @@ impl Server {
         let stat = stats.entry(dst).or_default();
         stat.tx_bytes += pkt.len() as u64;
 
-        let enc = Encryptor::new(self.config.cryptor());
-        let buf = self
-            .new_msg(&va.ra)?
-            .ip_data()?
-            .kind(kind)?
-            .payload(pkt)?
-            .transform(&enc)?;
+        let msg = self.new_msg(&va.ra)?.ip_data()?.kind(kind)?.payload(pkt)?;
 
         let dst = va.ra.addr();
 
         if let Some(s) = self.socket() {
             // ignore failure
-            let _ = s.send_to(&buf, dst);
+            let _ = s.send_to(&msg.build()?, dst);
         }
 
         Ok(())
@@ -146,29 +140,28 @@ impl Server {
                 .add_or_update_va(&va6.into(), ra.clone());
         }
 
-        let mut builder = self.new_msg(&ra)?.echo_ack()?.id(pkt.id()?)?;
+        let mut msg = self.new_msg(&ra)?.echo_ack()?.id(pkt.id()?)?;
 
         if let Some(ref addr4) = self.config.loc_tun_in {
-            builder = builder.ipv4_addr(addr4.addr())?;
+            msg = msg.ipv4_addr(addr4.addr())?;
         }
 
         if let Some(ref addr6) = self.config.loc_tun_in6 {
-            builder = builder.ipv6_addr(addr6.addr())?;
+            msg = msg.ipv6_addr(addr6.addr())?;
         }
-
-        let enc = Encryptor::new(self.config.cryptor());
-        let buf = builder.transform(&enc)?;
 
         if let Some(s) = self.socket() {
             // ignore failure
-            let _ = s.send_to(&buf, src);
+            let _ = s.send_to(&msg.build()?, src);
         }
 
         Ok(())
     }
 
     fn new_msg(&self, ra: &RefRA) -> Result<MsgBuilder> {
-        let builder = MsgBuilder::default().seq(ra.next_seq())?;
+        let builder = MsgBuilder::default()
+            .with_cryptor(self.config.cryptor())?
+            .seq(ra.next_seq())?;
 
         Ok(builder)
     }

@@ -1,5 +1,7 @@
+use super::encrypt::NO_ENCRYPT;
+use super::Encryptor;
 use crate::error::{Error, Result};
-use crate::msg::builder::Builder as Build;
+use crate::msg::builder::{Builder as Build, Finalizer};
 use byteorder::{BigEndian, ByteOrder};
 use num_enum::TryFromPrimitive;
 use packet::{buffer::Dynamic, Buffer};
@@ -14,37 +16,36 @@ pub enum Kind {
 
 const HEADER_SIZE: usize = 4;
 
-pub struct Builder<B: Buffer = Dynamic> {
+pub struct Builder<F: Finalizer<B>, B: Buffer> {
     buffer: B,
     kind: bool,
     payload: bool,
+    finalizer: F,
 }
 
-impl Default for Builder<Dynamic> {
+impl<'a> Default for Builder<Encryptor<'a>, Dynamic> {
     fn default() -> Self {
-        Builder::with(Dynamic::default()).unwrap()
+        Builder::with(Dynamic::default(), NO_ENCRYPT).unwrap()
     }
 }
 
-impl<B: Buffer> Build<B> for Builder<B> {
-    fn with(mut buf: B) -> Result<Self> {
+impl<F: Finalizer<B>, B: Buffer> Build<B> for Builder<F, B> {
+    fn build(self) -> Result<Vec<u8>> {
+        self.finalizer.finalize(self.buffer)
+    }
+}
+
+impl<F: Finalizer<B>, B: Buffer> Builder<F, B> {
+    pub fn with(mut buf: B, finalizer: F) -> Result<Builder<F, B>> {
         buf.next(HEADER_SIZE)?;
         Ok(Builder {
             buffer: buf,
             kind: false,
             payload: false,
+            finalizer,
         })
     }
 
-    fn build(self) -> Result<Vec<u8>> {
-        if !self.kind | !self.payload {
-            Err(Error::InvalidPacket)?
-        }
-        Ok(self.buffer.into_inner().as_mut().to_owned())
-    }
-}
-
-impl<B: Buffer> Builder<B> {
     pub fn kind(mut self, kind: Kind) -> Result<Self> {
         self.kind = true;
         BigEndian::write_u16(&mut self.buffer.data_mut()[0..], kind as u16);
@@ -108,13 +109,14 @@ mod tests {
 
     #[test]
     fn test() {
-        let a = Builder::default()
+        let buf = Builder::default()
             .kind(Kind::V4)
             .unwrap()
             .payload(&[0; 6])
+            .unwrap()
+            .build()
             .unwrap();
 
-        let buf = a.build().unwrap();
         assert_eq!(buf.len(), 4 + 6);
 
         let p = Packet::new(buf).unwrap();

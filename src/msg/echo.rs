@@ -1,34 +1,38 @@
-use std::net::{Ipv4Addr, Ipv6Addr};
-
+use super::encrypt::NO_ENCRYPT;
+use super::Encryptor;
 use crate::error::{Error, Result};
-use crate::msg::builder::Builder as Build;
+use crate::msg::builder::{Builder as Build, Finalizer};
 use byteorder::{BigEndian, ByteOrder};
 use packet::{buffer::Dynamic, Buffer};
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 const PACKET_SIZE: usize = 24;
 
-pub struct Builder<B: Buffer = Dynamic> {
+pub struct Builder<F: Finalizer<B>, B: Buffer> {
     buffer: B,
+    finalizer: F,
 }
 
-impl Default for Builder<Dynamic> {
+impl<'a> Default for Builder<Encryptor<'a>, Dynamic> {
     fn default() -> Self {
-        Builder::with(Dynamic::default()).unwrap()
+        Builder::with(Dynamic::default(), NO_ENCRYPT).unwrap()
     }
 }
 
-impl<B: Buffer> Build<B> for Builder<B> {
-    fn with(mut buf: B) -> Result<Self> {
-        buf.next(PACKET_SIZE)?;
-        Ok(Builder { buffer: buf })
-    }
-
+impl<F: Finalizer<B>, B: Buffer> Build<B> for Builder<F, B> {
     fn build(self) -> Result<Vec<u8>> {
-        Ok(self.buffer.into_inner().as_mut().to_owned())
+        self.finalizer.finalize(self.buffer)
     }
 }
 
-impl<B: Buffer> Builder<B> {
+impl<F: Finalizer<B>, B: Buffer> Builder<F, B> {
+    pub fn with(mut buf: B, finalizer: F) -> Result<Builder<F, B>> {
+        buf.next(PACKET_SIZE)?;
+        Ok(Builder {
+            buffer: buf,
+            finalizer,
+        })
+    }
     pub fn id(mut self, id: u32) -> Result<Self> {
         BigEndian::write_u32(&mut self.buffer.data_mut()[20..], id);
         Ok(self)
@@ -78,15 +82,16 @@ mod tests {
     fn test() {
         let addr4 = "1.2.3.4".parse().unwrap();
         let addr6 = "2::1".parse().unwrap();
-        let a = Builder::default()
+        let buf = Builder::default()
             .id(1)
             .unwrap()
             .ipv4_addr(addr4)
             .unwrap()
             .ipv6_addr(addr6)
+            .unwrap()
+            .build()
             .unwrap();
 
-        let buf = a.build().unwrap();
         assert_eq!(buf.len(), 24);
 
         let p = Packet::new(buf).unwrap();

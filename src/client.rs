@@ -1,10 +1,8 @@
 use crate::config::Config;
-use crate::msg::BuilderExt;
-use crate::msg::Encryptor;
 use crate::poll;
 use crate::Runtime;
 use crate::{
-    msg::{IpDataKind, IpDataPacket, MsgBuilder, MsgPacket, Op},
+    msg::{Builder, IpDataKind, IpDataPacket, MsgBuilder, MsgPacket, Op},
     state::State,
     util::build_server_addr,
     util::pretty_duration,
@@ -80,17 +78,11 @@ impl Client {
     fn forward_remote(&self, kind: IpDataKind, pkt: &[u8]) -> Result<()> {
         self.state.borrow_mut().tx_bytes += pkt.len() as u64;
 
-        let enc = Encryptor::new(self.config.cryptor());
-        let buf = self
-            .new_msg()?
-            .ip_data()?
-            .kind(kind)?
-            .payload(pkt)?
-            .transform(&enc)?;
+        let msg = self.new_msg()?.ip_data()?.kind(kind)?.payload(pkt)?;
 
         if let Some(s) = self.socket() {
             //ignore failure
-            let _ = s.send(&buf);
+            let _ = s.send(&msg.build()?);
         }
 
         Ok(())
@@ -111,31 +103,31 @@ impl Client {
     }
 
     fn send_echo(&self) -> Result<()> {
-        let mut builder = self
+        let mut msg = self
             .new_msg()?
             .echo_req()?
             .id(self.state.borrow().gen_id())?;
 
         if let Some(ref addr4) = self.config.loc_tun_in {
-            builder = builder.ipv4_addr(addr4.addr())?;
+            msg = msg.ipv4_addr(addr4.addr())?;
         }
 
         if let Some(ref addr6) = self.config.loc_tun_in6 {
-            builder = builder.ipv6_addr(addr6.addr())?;
+            msg = msg.ipv6_addr(addr6.addr())?;
         }
-        let enc = Encryptor::new(self.config.cryptor());
-        let buf = builder.transform(&enc)?;
 
         if let Some(s) = self.socket() {
             //ignore failure
-            let _ = s.send(&buf);
+            let _ = s.send(&msg.build()?);
         }
 
         Ok(())
     }
 
     fn new_msg(&self) -> Result<MsgBuilder> {
-        let builder = MsgBuilder::default().seq(self.state.borrow_mut().next_seq())?;
+        let builder = MsgBuilder::default()
+            .with_cryptor(self.config.cryptor())?
+            .seq(self.state.borrow_mut().next_seq())?;
 
         Ok(builder)
     }

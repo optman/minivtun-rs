@@ -1,24 +1,26 @@
 use crate::cryptor::Cryptor;
 use crate::error::Result;
-use crate::msg::builder::PacketTransform;
+use crate::msg::builder::Finalizer;
+use packet::Buffer;
 
-pub struct Encryptor<'a> {
-    cryptor: Option<&'a dyn Cryptor>,
-}
+pub struct Encryptor<'a>(Option<&'a dyn Cryptor>);
 
 impl<'a> Encryptor<'a> {
     pub fn new(cryptor: Option<&'a dyn Cryptor>) -> Self {
-        Self { cryptor }
+        Self(cryptor)
     }
 }
 
-impl PacketTransform for Encryptor<'_> {
-    fn transform(&self, mut data: Vec<u8>) -> Result<Vec<u8>> {
-        if let Some(cryptor) = self.cryptor {
-            data[4..20].copy_from_slice(cryptor.auth_key());
-            Ok(cryptor.encrypt_vec(&data)?)
+impl<B: Buffer> Finalizer<B> for Encryptor<'_> {
+    fn finalize(&self, data: B) -> Result<Vec<u8>> {
+        if let Some(cryptor) = self.0 {
+            let mut data = data.into_inner();
+            data.as_mut()[4..20].copy_from_slice(cryptor.auth_key());
+            Ok(cryptor.encrypt_vec(data.as_mut())?)
         } else {
-            Ok(data)
+            Ok(data.into_inner().as_mut().to_owned())
         }
     }
 }
+
+pub const NO_ENCRYPT: Encryptor<'static> = Encryptor(None);
