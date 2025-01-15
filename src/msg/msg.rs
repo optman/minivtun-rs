@@ -32,7 +32,7 @@ impl Default for Builder<'_, Dynamic> {
     }
 }
 
-impl<'a, B: Buffer> Build<B> for Builder<'a, B> {
+impl<'a, B: Buffer> Build for Builder<'a, B> {
     fn build(self) -> Result<Vec<u8>> {
         if !self.kind | !self.payload {
             Err(Error::InvalidPacket)?

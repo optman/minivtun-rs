@@ -29,7 +29,7 @@ impl<'a> Default for Builder<Encryptor<'a>, Dynamic> {
     }
 }
 
-impl<F: Finalizer<B>, B: Buffer> Build<B> for Builder<F, B> {
+impl<F: Finalizer<B>, B: Buffer> Build for Builder<F, B> {
     fn build(self) -> Result<Vec<u8>> {
         self.finalizer.finalize(self.buffer)
     }

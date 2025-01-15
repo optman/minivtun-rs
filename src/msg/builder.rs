@@ -2,7 +2,7 @@ use crate::error::Result;
 use packet::Buffer;
 
 /// A packet `Builder`.
-pub trait Builder<B: Buffer> {
+pub trait Builder {
     //build with finalized
     fn build(self) -> Result<Vec<u8>>;
 }
