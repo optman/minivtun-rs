@@ -122,8 +122,7 @@ fn add_addr(addr: IpNet, dev: &str) -> Result<(), Error> {
         c.arg("-6");
     }
 
-    if !c
-        .arg("addr")
+    if c.arg("addr")
         .arg("add")
         .arg(addr.to_string())
         .arg("dev")
@@ -131,10 +130,10 @@ fn add_addr(addr: IpNet, dev: &str) -> Result<(), Error> {
         .status()
         .map_or(false, |c| c.success())
     {
-        Err(Error::AddAddrFail)?
+        return Ok(());
     }
 
-    Ok(())
+    Err(Error::AddAddrFail)
 }
 
 fn add_route(
@@ -168,7 +167,7 @@ fn add_route(
         return Ok(());
     }
 
-    Err(Error::AddRouteFail)?
+    Err(Error::AddRouteFail)
 }
 
 fn config_tun(config: &Config) -> Result<Device, Box<dyn std::error::Error>> {

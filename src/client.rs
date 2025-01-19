@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::poll;
+use crate::util::source_ip;
 use crate::Runtime;
 use crate::{
     msg::{Builder, IpDataKind, IpDataPacket, MsgBuilder, MsgPacket, Op},
@@ -30,7 +31,7 @@ pub struct Client {
     pub(crate) config: Rc<Config>,
     pub(crate) rt: Runtime,
     pub(crate) state: RefCell<State>,
-    pub(crate) server_index: usize,
+    pub(crate) server_index: RefCell<usize>,
 }
 
 impl Client {
@@ -39,26 +40,12 @@ impl Client {
             config,
             rt,
             state: Default::default(),
-            server_index: 0,
+            server_index: Default::default(),
         })
     }
 
     pub fn run(self) -> Result<()> {
-        if let Some(server_addr) = self
-            .config
-            .server_addrs
-            .as_ref()
-            .and_then(|addrs| addrs.get(self.server_index))
-        {
-            if let Some(s) = self.socket() {
-                //ignore failure
-                let _ = s
-                    .connect(&build_server_addr(server_addr))
-                    .inspect_err(|e| warn!("{:?}", e));
-            }
-        }
-        self.state.borrow_mut().last_connect = Some(Instant::now());
-
+        self.connect();
         poll::poll(
             self.tun().as_raw_fd(),
             self.rt.control_fd.as_ref().map(|v| v.as_raw_fd()),
@@ -75,34 +62,81 @@ impl Client {
         &self.rt.tun_fd
     }
 
+    fn get_next_server_addr(&self) -> String {
+        let addrs = self
+            .config
+            .server_addrs
+            .as_ref()
+            .expect("server addrs must be specified");
+        let idx = *self.server_index.borrow();
+        *self.server_index.borrow_mut() = (idx + 1) % addrs.len();
+        build_server_addr(addrs.get(idx).unwrap())
+    }
+
+    fn create_socket(&mut self) {
+        info!("bind...");
+        self.state.borrow_mut().last_rebind = Some(Instant::now());
+        if let Some(ref factory) = self.rt.socket_factory {
+            match factory.create_socket() {
+                Ok(socket) => {
+                    debug!("bind to {:}", socket.local_addr().unwrap());
+                    self.rt.with_socket(socket);
+                }
+                Err(e) => warn!("bind fail, {:}", e),
+            }
+        } else {
+            warn!("socket factory not set");
+        }
+    }
+
+    fn connect(&self) {
+        let s = match self.socket() {
+            Some(s) => s,
+            None => return,
+        };
+
+        info!("connect...");
+        self.state.borrow_mut().last_connect = Some(Instant::now());
+        //ignore failure
+        let _ = s
+            .connect(&self.get_next_server_addr())
+            .inspect_err(|e| warn!("{:?}", e));
+    }
+
     fn forward_remote(&self, kind: IpDataKind, pkt: &[u8]) -> Result<()> {
-        self.state.borrow_mut().tx_bytes += pkt.len() as u64;
+        let s = match self.socket() {
+            Some(s) => s,
+            None => return Ok(()),
+        };
 
         let msg = self.new_msg()?.ip_data()?.kind(kind)?.payload(pkt)?;
 
-        if let Some(s) = self.socket() {
-            //ignore failure
-            let _ = s.send(&msg.build()?);
-        }
+        //ignore failure
+        let _ = s.send(&msg.build()?);
+
+        self.state.borrow_mut().tx_bytes += pkt.len() as u64;
 
         Ok(())
     }
 
     fn forward_local(&self, pkt: &[u8]) -> Result<()> {
-        self.state.borrow_mut().rx_bytes += pkt.len() as u64;
+        //is valid ip packet?
+        let _ = source_ip(pkt)?;
 
-        match pkt[0] >> 4 {
-            4 | 6 => {
-                //ignore failure
-                let _ = write(self.tun(), pkt);
-            }
-            _ => debug!("[FWD]invalid packet!"),
-        }
+        //ignore failure
+        let _ = write(self.tun(), pkt);
+
+        self.state.borrow_mut().rx_bytes += pkt.len() as u64;
 
         Ok(())
     }
 
     fn send_echo(&self) -> Result<()> {
+        let s = match self.socket() {
+            Some(s) => s,
+            None => return Ok(()),
+        };
+
         let mut msg = self
             .new_msg()?
             .echo_req()?
@@ -116,10 +150,8 @@ impl Client {
             msg = msg.ipv6_addr(addr6.addr())?;
         }
 
-        if let Some(s) = self.socket() {
-            //ignore failure
-            let _ = s.send(&msg.build()?);
-        }
+        //ignore failure
+        let _ = s.send(&msg.build()?);
 
         Ok(())
     }
@@ -283,31 +315,10 @@ impl poll::Reactor for Client {
             && check_timeout(last_connect, &reconnect_timeout)
         {
             if rebind && check_timeout(last_rebind, &rebind_timeout) {
-                info!("Rebind...");
-                self.state.borrow_mut().last_rebind = Some(Instant::now());
-                if let Some(ref factory) = self.rt.socket_factory {
-                    match factory.create_socket() {
-                        Ok(socket) => {
-                            debug!("rebind to {:}", socket.local_addr()?);
-                            self.rt.with_socket(socket);
-                        }
-                        Err(e) => warn!("rebind fail, {:}", e),
-                    }
-                }
+                self.create_socket();
             };
 
-            info!("Reconnect...");
-            self.state.borrow_mut().last_connect = Some(Instant::now());
-            if let Some(server_addrs) = &self.config.server_addrs {
-                self.server_index = (self.server_index + 1) % server_addrs.len();
-                let server_addr = &server_addrs[self.server_index];
-                if let Some(s) = self.socket() {
-                    //ignore failure
-                    let _ = s
-                        .connect(&build_server_addr(server_addr))
-                        .map_err(|e| warn!("{:?}", e));
-                }
-            }
+            self.connect();
         }
 
         if check_timeout(last_echo, &keepalive_interval) {

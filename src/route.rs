@@ -41,8 +41,8 @@ impl RealAddr {
 pub struct RefRA(Rc<RefCell<RealAddr>>);
 
 impl RefRA {
-    pub fn new(addr: &SocketAddr) -> Self {
-        RefRA(Rc::new(RefCell::new(RealAddr::new(*addr))))
+    pub fn new(addr: SocketAddr) -> Self {
+        RefRA(Rc::new(RefCell::new(RealAddr::new(addr))))
     }
 
     pub fn recv(&self) {
@@ -93,8 +93,8 @@ impl RouteTable {
     }
 
     // Adds a new route to the route table.
-    pub fn add_route(&mut self, net: &IpNet, gw: &IpAddr) {
-        self.vt_routes.push((*net, *gw));
+    pub fn add_route(&mut self, net: IpNet, gw: IpAddr) {
+        self.vt_routes.push((net, gw));
     }
 
     // Retrieves or adds a real address to the map.
@@ -104,19 +104,19 @@ impl RouteTable {
             .and_modify(|v| v.recv())
             .or_insert_with(|| {
                 debug!("New client [{:?}]", addr);
-                RefRA::new(addr)
+                RefRA::new(*addr)
             })
     }
 
     // Adds or updates a virtual address.
-    pub fn add_or_update_va(&mut self, va: &IpAddr, ra: RefRA) -> Option<&VirtualAddr> {
+    pub fn add_or_update_va(&mut self, va: IpAddr, ra: RefRA) -> Option<&VirtualAddr> {
         if va.is_unspecified() {
             return None;
         }
 
         let va = self
             .va_map
-            .entry(*va)
+            .entry(va)
             .and_modify(|v| {
                 v.last_recv = Instant::now();
                 if v.ra.addr() != ra.addr() {
@@ -126,7 +126,7 @@ impl RouteTable {
             })
             .or_insert_with(|| {
                 info!("New vip [{:?}] at [{:?}]", va, ra.addr());
-                VirtualAddr::new(*va, ra)
+                VirtualAddr::new(va, ra)
             });
 
         Some(va)
@@ -173,7 +173,7 @@ impl RouteTable {
             }
         }
 
-        gw_ra.and_then(move |ra| self.add_or_update_va(va, ra))
+        gw_ra.and_then(move |ra| self.add_or_update_va(*va, ra))
     }
 
     // Prunes outdated entries from the route table.

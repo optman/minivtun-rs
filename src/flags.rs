@@ -188,6 +188,7 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
             }
         }
 
+        #[cfg(feature = "holepunch")]
         if let Some(ref mut rndz) = config.rndz {
             rndz.server = resolve_dns(&rndz.server)?;
         }

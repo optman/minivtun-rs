@@ -100,7 +100,6 @@ mod linux {
         pub(crate) config: Rc<Config>,
     }
     impl SocketConfigure for DefaultSocketConfig {
-        #[allow(unused_variables)]
         fn config_socket(&self, sk: std::os::unix::prelude::RawFd) -> std::io::Result<()> {
             if let Some(fwmark) = self.config.fwmark {
                 log::debug!("set fwmark {}", fwmark);

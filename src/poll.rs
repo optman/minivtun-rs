@@ -2,7 +2,7 @@ use std::error::Error;
 use std::mem;
 use std::mem::MaybeUninit;
 use std::os::unix::io::RawFd;
-use std::{cmp::max, io, ptr};
+use std::{io, ptr};
 
 extern crate libc;
 
@@ -29,12 +29,15 @@ pub fn poll<T: Reactor>(
         let control_fd = control_fd.unwrap_or(0);
         let exit_signal_fd = exit_signal.unwrap_or(0);
 
-        let nfds = max(max(max(tun_fd, socket_fd), control_fd), exit_signal_fd) + 1;
+        let nfds = [tun_fd, socket_fd, control_fd, exit_signal_fd]
+            .iter()
+            .max()
+            .unwrap()
+            + 1;
 
         unsafe {
             libc::FD_ZERO(&mut fd_set);
-            libc::FD_SET(tun_fd, &mut fd_set);
-            for fd in [socket_fd, control_fd, exit_signal_fd] {
+            for fd in [tun_fd, socket_fd, control_fd, exit_signal_fd] {
                 if fd != 0 {
                     libc::FD_SET(fd, &mut fd_set);
                 }

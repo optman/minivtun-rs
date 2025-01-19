@@ -16,7 +16,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::io::Write;
-use std::mem::{self, MaybeUninit};
+use std::mem::MaybeUninit;
 use std::net::{IpAddr, SocketAddr};
 use std::os::fd::OwnedFd;
 use std::os::unix::io::FromRawFd;
@@ -57,7 +57,7 @@ impl Server {
     pub fn run(self) -> Result<()> {
         for (net, gw) in &self.config.routes {
             match gw {
-                Some(gw) => self.route.borrow_mut().add_route(net, gw),
+                Some(gw) => self.route.borrow_mut().add_route(*net, *gw),
                 None => return Err("route gw must be set in server mode!".into()),
             }
         }
@@ -70,8 +70,8 @@ impl Server {
         )
     }
 
-    fn socket(&self) -> Option<&Socket> {
-        self.rt.socket.as_deref()
+    fn socket(&self) -> &Socket {
+        self.rt.socket.as_deref().expect("socket must be available")
     }
 
     fn tun(&self) -> &OwnedFd {
@@ -90,13 +90,10 @@ impl Server {
         stat.tx_bytes += pkt.len() as u64;
 
         let msg = self.new_msg(&va.ra)?.ip_data()?.kind(kind)?.payload(pkt)?;
-
         let dst = va.ra.addr();
 
-        if let Some(s) = self.socket() {
-            // ignore failure
-            let _ = s.send_to(&msg.build()?, dst);
-        }
+        // ignore failure
+        let _ = self.socket().send_to(&msg.build()?, dst);
 
         Ok(())
     }
@@ -104,23 +101,17 @@ impl Server {
     fn forward_local(&self, ra: &SocketAddr, pkt: &[u8]) -> Result<()> {
         let src = source_ip(pkt)?;
         let ra = self.route.borrow_mut().get_or_add_ra(ra).clone();
-        if self.route.borrow_mut().add_or_update_va(&src, ra).is_none() {
+        if self.route.borrow_mut().add_or_update_va(src, ra).is_none() {
             debug!("unknown src {:}", src);
             return Ok(());
         }
+
         let mut stats = self.stats.borrow_mut();
         let stat = stats.entry(src).or_default();
         stat.rx_bytes += pkt.len() as u64;
 
-        match pkt[0] >> 4 {
-            4 | 6 => {
-                // ignore failure
-                let _ = write(self.tun(), pkt)?;
-            }
-            _ => {
-                debug!("[FWD] invalid packet!")
-            }
-        }
+        // ignore failure
+        let _ = write(self.tun(), pkt);
 
         Ok(())
     }
@@ -132,12 +123,12 @@ impl Server {
         if !va4.is_unspecified() {
             self.route
                 .borrow_mut()
-                .add_or_update_va(&va4.into(), ra.clone());
+                .add_or_update_va(va4.into(), ra.clone());
         }
         if !va6.is_unspecified() {
             self.route
                 .borrow_mut()
-                .add_or_update_va(&va6.into(), ra.clone());
+                .add_or_update_va(va6.into(), ra.clone());
         }
 
         let mut msg = self.new_msg(&ra)?.echo_ack()?.id(pkt.id()?)?;
@@ -150,10 +141,8 @@ impl Server {
             msg = msg.ipv6_addr(addr6.addr())?;
         }
 
-        if let Some(s) = self.socket() {
-            // ignore failure
-            let _ = s.send_to(&msg.build()?, src);
-        }
+        // ignore failure
+        let _ = self.socket().send_to(&msg.build()?, src);
 
         Ok(())
     }
@@ -174,11 +163,7 @@ impl Display for Server {
             f,
             "{:<15} {:}",
             "local_addr:",
-            self.socket()
-                .ok_or(std::io::Error::other("socket not created"))
-                .and_then(|s| s.local_addr())
-                .map(|v| v.to_string())
-                .unwrap_or_else(|_| "NA".to_string())
+            self.socket().local_addr().unwrap(),
         )?;
         if let Some(ipv4) = self.config.loc_tun_in {
             writeln!(f, "{:<15} {:}", "ipv4:", ipv4)?;
@@ -196,9 +181,8 @@ impl Display for Server {
                 "{:<15} {:}",
                 "rndz_health:",
                 self.socket()
-                    .ok_or(std::io::Error::other("socket not created"))
-                    .map(|s| s.last_health())
-                    .unwrap_or(self.last_health)
+                    .last_health()
+                    .or(self.last_health)
                     .map(|v| format!("{} ago", crate::util::pretty_duration(&v.elapsed())))
                     .unwrap_or_else(|| "Never".to_owned())
             )?;
@@ -226,42 +210,33 @@ impl Display for Server {
 
 impl poll::Reactor for Server {
     fn socket_fd(&self) -> Option<RawFd> {
-        self.socket().map(|s| s.as_raw_fd())
+        Some(self.socket().as_raw_fd())
     }
 
     fn tunnel_recv(&self) -> Result<()> {
-        let mut buf =
-            unsafe { mem::MaybeUninit::assume_init(mem::MaybeUninit::<[u8; 1500]>::uninit()) };
+        let mut buf = unsafe { MaybeUninit::assume_init(MaybeUninit::<[u8; 1500]>::uninit()) };
         let size = read(self.tun().as_raw_fd(), &mut buf)?;
-        match buf[0] >> 4 {
-            4 => {
-                // ignore failure
-                let _ = self
-                    .forward_remote(IpDataKind::V4, &buf[..size])
-                    .map_err(|e| debug!("forward remote fail. {:?}", e));
-            }
-            6 => {
-                // ignore failure
-                let _ = self
-                    .forward_remote(IpDataKind::V6, &buf[..size])
-                    .map_err(|e| debug!("forward remote fail. {:?}", e));
-            }
+
+        let kind = match buf[0] >> 4 {
+            4 => IpDataKind::V4,
+            6 => IpDataKind::V6,
             _ => {
-                warn!("[INPUT] invalid packet");
+                warn!("[INPUT]invalid packet");
+                return Ok(());
             }
-        }
+        };
+
+        //ignore result
+        let _ = self
+            .forward_remote(kind, &buf[..size])
+            .inspect_err(|e| debug!("forward remote fail. {:?}", e));
 
         Ok(())
     }
 
     fn network_recv(&self) -> Result<()> {
-        let s = match self.socket() {
-            Some(s) => s,
-            None => return Ok(()),
-        };
-
         let mut buf = unsafe { MaybeUninit::assume_init(MaybeUninit::<[u8; 1500]>::uninit()) };
-        let (size, src) = match s.recv_from(&mut buf) {
+        let (size, src) = match self.socket().recv_from(&mut buf) {
             Ok((size, src)) => (size, src),
             Err(e) => {
                 debug!("receive from client fail. {:?}", e);
@@ -300,7 +275,7 @@ impl poll::Reactor for Server {
         } = *self.config;
 
         if rebind
-            && (self.socket().map(|s| s.is_stale()).unwrap_or(true)
+            && (self.socket().is_stale()
                 || self
                     .last_health
                     .map(|l| l.elapsed() > rebind_timeout)
@@ -326,7 +301,7 @@ impl poll::Reactor for Server {
             }
         }
 
-        if let Some(last_health) = self.socket().and_then(|s| s.last_health()) {
+        if let Some(last_health) = self.socket().last_health() {
             self.last_health = Some(last_health);
         }
 
