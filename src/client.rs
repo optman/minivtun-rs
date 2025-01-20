@@ -73,19 +73,18 @@ impl Client {
         build_server_addr(addrs.get(idx).unwrap())
     }
 
-    fn create_socket(&mut self) {
-        info!("bind...");
+    fn rebind(&mut self) {
         self.state.borrow_mut().last_rebind = Some(Instant::now());
         if let Some(ref factory) = self.rt.socket_factory {
             match factory.create_socket() {
                 Ok(socket) => {
-                    debug!("bind to {:}", socket.local_addr().unwrap());
+                    info!("rebind to {:}", socket.local_addr().unwrap());
                     self.rt.with_socket(socket);
                 }
-                Err(e) => warn!("bind fail, {:}", e),
+                Err(e) => warn!("rebind fail, {:}", e),
             }
         } else {
-            warn!("socket factory not set");
+            warn!("rebind fail, socket factory not set");
         }
     }
 
@@ -95,12 +94,12 @@ impl Client {
             None => return,
         };
 
-        info!("connect...");
+        let server_addr = self.get_next_server_addr();
+        info!("connect to {:}", server_addr);
+
         self.state.borrow_mut().last_connect = Some(Instant::now());
         //ignore failure
-        let _ = s
-            .connect(&self.get_next_server_addr())
-            .inspect_err(|e| warn!("{:?}", e));
+        let _ = s.connect(&server_addr).inspect_err(|e| warn!("{:?}", e));
     }
 
     fn forward_remote(&self, kind: IpDataKind, pkt: &[u8]) -> Result<()> {
@@ -315,7 +314,7 @@ impl poll::Reactor for Client {
             && check_timeout(last_connect, &reconnect_timeout)
         {
             if rebind && check_timeout(last_rebind, &rebind_timeout) {
-                self.create_socket();
+                self.rebind();
             };
 
             self.connect();
