@@ -62,15 +62,15 @@ impl Client {
         &self.rt.tun_fd
     }
 
-    fn get_next_server_addr(&self) -> String {
-        let addrs = self
-            .config
-            .server_addrs
-            .as_ref()
-            .expect("server addrs must be specified");
+    fn get_next_server_addr(&self) -> Option<String> {
+        let addrs = match self.config.server_addrs {
+            Some(ref addrs) => addrs,
+            None => return None,
+        };
+
         let idx = *self.server_index.borrow();
         *self.server_index.borrow_mut() = (idx + 1) % addrs.len();
-        build_server_addr(addrs.get(idx).unwrap())
+        Some(build_server_addr(addrs.get(idx).unwrap()))
     }
 
     fn rebind(&mut self) {
@@ -94,12 +94,15 @@ impl Client {
             None => return,
         };
 
-        let server_addr = self.get_next_server_addr();
-        info!("connect to {:}", server_addr);
+        if let Some(server_addr) = self.get_next_server_addr() {
+            //ignore failure
+            let _ = s.connect(&server_addr).inspect_err(|e| warn!("{:?}", e));
+        } else {
+            //it is possible that the socket is already connected
+        };
 
+        info!("connected to {:}", s.peer_addr().unwrap());
         self.state.borrow_mut().last_connect = Some(Instant::now());
-        //ignore failure
-        let _ = s.connect(&server_addr).inspect_err(|e| warn!("{:?}", e));
     }
 
     fn forward_remote(&self, kind: IpDataKind, pkt: &[u8]) -> Result<()> {
