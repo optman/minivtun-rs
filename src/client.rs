@@ -101,7 +101,10 @@ impl Client {
             //it is possible that the socket is already connected
         };
 
-        info!("connected to {:}", s.peer_addr().unwrap());
+        if let Ok(peer_addr) = s.peer_addr() {
+            info!("connected to {:}", peer_addr);
+        };
+
         self.state.borrow_mut().last_connect = Some(Instant::now());
     }
 
