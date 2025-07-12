@@ -2,7 +2,7 @@ use daemonize::Daemonize;
 use ipnet::IpNet;
 use log::{debug, info, warn};
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
@@ -33,6 +33,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Show information only if specified
     if config.info {
         show_info(&config)?;
+        return Ok(());
+    }
+
+    // Trigger change server if specified
+    if config.change_server {
+        trigger_change_server(&config)?;
         return Ok(());
     }
 
@@ -88,7 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-fn show_info(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+fn get_control_stream(config: &Config) -> std::io::Result<UnixStream> {
     let control_path = Path::new(CONTROL_PATH_BASE)
         .join(
             config
@@ -98,11 +104,25 @@ fn show_info(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
                 .replace("%d", "0"),
         )
         .with_extension("sock");
+    UnixStream::connect(control_path)
+}
 
-    if let Ok(mut ctrl) = UnixStream::connect(control_path) {
-        let mut buf = String::new();
-        ctrl.read_to_string(&mut buf)?;
-        println!("{}", buf);
+fn show_info(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+    if let Ok(mut ctrl) = get_control_stream(config) {
+        ctrl.write_all(b"show-info\n")?;
+        let mut response = String::new();
+        ctrl.read_to_string(&mut response)?;
+        println!("{}", response);
+    }
+    Ok(())
+}
+
+fn trigger_change_server(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+    if let Ok(mut ctrl) = get_control_stream(config) {
+        ctrl.write_all(b"change-server\n")?;
+        let mut response = String::new();
+        ctrl.read_to_string(&mut response)?;
+        println!("{}", response);
     }
     Ok(())
 }

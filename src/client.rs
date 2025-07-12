@@ -14,7 +14,7 @@ use nix::unistd::{read, write};
 use size::Size;
 use std::cell::RefCell;
 use std::fmt::Formatter;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::mem::MaybeUninit;
 use std::os::fd::OwnedFd;
 use std::os::unix::io::FromRawFd;
@@ -73,18 +73,23 @@ impl Client {
         Some(build_server_addr(addrs.get(idx).unwrap()))
     }
 
-    fn rebind(&mut self) {
+    fn rebind(&mut self) -> Result<()> {
         self.state.borrow_mut().last_rebind = Some(Instant::now());
         if let Some(ref factory) = self.rt.socket_factory {
             match factory.create_socket() {
                 Ok(socket) => {
                     info!("rebind to {:}", socket.local_addr().unwrap());
                     self.rt.with_socket(socket);
+                    Ok(())
                 }
-                Err(e) => warn!("rebind fail, {:}", e),
+                Err(e) => {
+                    warn!("rebind fail, {:}", e);
+                    Err(e.into())
+                }
             }
         } else {
             warn!("rebind fail, socket factory not set");
+            Err("socket factory not set".into())
         }
     }
 
@@ -320,7 +325,7 @@ impl poll::Reactor for Client {
             && check_timeout(last_connect, &reconnect_timeout)
         {
             if rebind && check_timeout(last_rebind, &rebind_timeout) {
-                self.rebind();
+                let _ = self.rebind();
             };
 
             self.connect();
@@ -334,9 +339,32 @@ impl poll::Reactor for Client {
         Ok(())
     }
 
-    fn handle_control_connection(&self, fd: RawFd) {
+    fn handle_control_connection(&mut self, fd: RawFd) {
         let mut us = unsafe { UnixStream::from_raw_fd(fd) };
-        //ignore failure
-        let _ = us.write(self.to_string().as_bytes());
+        let mut buf = [0u8; 64];
+
+        // First try to read from the socket in case it's a command
+        if let Ok(n) = us.read(&mut buf) {
+            let resp = if let Ok(s) = std::str::from_utf8(&buf[..n]) {
+                if s.trim() == "change-server" {
+                    info!("Received change-server command, switching to next server");
+                    match self.rebind() {
+                        Ok(_) => {
+                            self.connect();
+                            "Changed server\n".to_string()
+                        }
+                        Err(e) => format!("Failed to change server: {:?}\n", e),
+                    }
+                } else if s.trim() == "show-info" {
+                    self.to_string()
+                } else {
+                    format!("Unknown command: {}\n", s.trim())
+                }
+            } else {
+                "Invalid UTF-8 sequence\n".to_string()
+            };
+
+            let _ = us.write(resp.as_bytes());
+        }
     }
 }

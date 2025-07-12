@@ -15,7 +15,7 @@ use size::Size;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::mem::MaybeUninit;
 use std::net::{IpAddr, SocketAddr};
 use std::os::fd::OwnedFd;
@@ -312,9 +312,23 @@ impl poll::Reactor for Server {
         Ok(())
     }
 
-    fn handle_control_connection(&self, fd: RawFd) {
+    fn handle_control_connection(&mut self, fd: RawFd) {
         let mut us = unsafe { UnixStream::from_raw_fd(fd) };
-        // ignore failure
-        let _ = us.write(self.to_string().as_bytes());
+        let mut buf = [0u8; 64];
+
+        // First try to read from the socket in case it's a command
+        if let Ok(n) = us.read(&mut buf) {
+            let resp = if let Ok(s) = std::str::from_utf8(&buf[..n]) {
+                if s.trim() == "show-info" {
+                    self.to_string()
+                } else {
+                    format!("Unknown command: {}\n", s.trim())
+                }
+            } else {
+                "Invalid UTF-8 sequence\n".to_string()
+            };
+
+            let _ = us.write(resp.as_bytes());
+        }
     }
 }

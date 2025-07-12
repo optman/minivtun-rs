@@ -42,6 +42,7 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
         .arg(Arg::from_usage("-w, --wait-dns                      'wait for DNS resolve ready after service started'"))
         .arg(Arg::from_usage("    --rebind                        'rebind socket before reconnect'"))
         .arg(Arg::from_usage("-i, --info                          'view current tunnel info'"))
+        .arg(Arg::from_usage("-c, --change-server                 'trigger client to change server'"))
         .arg(Arg::from_usage("    --pre-resolve-dns               'resolve dns at start and save for reconnect'"))
         ;
     #[cfg(feature = "holepunch")]
@@ -179,6 +180,7 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
     config.wait_dns = matches.is_present("wait-dns");
     config.rebind = matches.is_present("rebind");
     config.info = matches.is_present("info");
+    config.change_server = matches.is_present("change-server");
 
     config.pre_resolve_dns = matches.is_present("pre-resolve-dns");
     if config.pre_resolve_dns {
