@@ -61,7 +61,10 @@ impl RuntimeBuilder {
         let socket = self
             .socket
             .take()
-            .map_or_else(|| socket_factory.create_socket(), Ok)
+            .map_or_else(
+                || socket_factory.create_socket(self.config.get_server_addr(0).as_deref()),
+                Ok,
+            )
             .map(Some)
             .or_else(|e| {
                 if self.config.wait_dns {

@@ -5,8 +5,7 @@ use crate::Runtime;
 use crate::{
     msg::{Builder, IpDataKind, IpDataPacket, MsgBuilder, MsgPacket, Op},
     state::State,
-    util::build_server_addr,
-    util::pretty_duration,
+    util::{choose_bind_addr, pretty_duration},
     Socket,
 };
 use log::{debug, info, trace, warn};
@@ -45,7 +44,8 @@ impl Client {
     }
 
     pub fn run(self) -> Result<()> {
-        self.connect();
+        let current_server = self.get_current_server_addr();
+        self.connect(current_server.as_deref());
         poll::poll(
             self.tun().as_raw_fd(),
             self.rt.control_fd.as_ref().map(|v| v.as_raw_fd()),
@@ -62,21 +62,26 @@ impl Client {
         &self.rt.tun_fd
     }
 
+    fn get_current_server_addr(&self) -> Option<String> {
+        let idx = *self.server_index.borrow();
+        self.config.get_server_addr(idx)
+    }
+
     fn get_next_server_addr(&self) -> Option<String> {
-        let addrs = match self.config.server_addrs {
-            Some(ref addrs) => addrs,
+        let server_addrs_len = match self.config.server_addrs.as_ref() {
+            Some(addrs) => addrs.len(),
             None => return None,
         };
 
-        let idx = *self.server_index.borrow();
-        *self.server_index.borrow_mut() = (idx + 1) % addrs.len();
-        Some(build_server_addr(addrs.get(idx).unwrap()))
+        let idx = (*self.server_index.borrow() + 1) % server_addrs_len;
+        *self.server_index.borrow_mut() = idx;
+        self.config.get_server_addr(idx)
     }
 
-    fn rebind(&mut self) -> Result<()> {
+    fn rebind(&mut self, server_addr: Option<&str>) -> Result<()> {
         self.state.borrow_mut().last_rebind = Some(Instant::now());
         if let Some(ref factory) = self.rt.socket_factory {
-            match factory.create_socket() {
+            match factory.create_socket(server_addr) {
                 Ok(socket) => {
                     info!("rebind to {:}", socket.local_addr().unwrap());
                     self.rt.with_socket(socket);
@@ -93,18 +98,16 @@ impl Client {
         }
     }
 
-    fn connect(&self) {
+    fn connect(&self, server_addr: Option<&str>) {
         let s = match self.socket() {
             Some(s) => s,
             None => return,
         };
 
-        if let Some(server_addr) = self.get_next_server_addr() {
+        if let Some(addr) = server_addr {
             //ignore failure
-            let _ = s.connect(&server_addr).inspect_err(|e| warn!("{:?}", e));
-        } else {
-            //it is possible that the socket is already connected
-        };
+            let _ = s.connect(addr).inspect_err(|e| warn!("{:?}", e));
+        }
 
         if let Ok(peer_addr) = s.peer_addr() {
             info!("connected to {:}", peer_addr);
@@ -324,11 +327,25 @@ impl poll::Reactor for Client {
             && check_timeout(last_rx, &reconnect_timeout)
             && check_timeout(last_connect, &reconnect_timeout)
         {
-            if rebind && check_timeout(last_rebind, &rebind_timeout) {
-                let _ = self.rebind();
+            //1. get next server address
+            //2. rebind if needed. The current socket family may not match the next server address. If that is the case, we need to rebind.
+            //3. connect to the next server
+
+            let next_server = self.get_next_server_addr();
+            let next_bind_addr = choose_bind_addr(next_server.as_deref())?;
+
+            let rebind = rebind && check_timeout(last_rebind, &rebind_timeout);
+            let rebind = rebind
+                | self.socket().map_or(true, |s| {
+                    s.local_addr().map_or(true, |local_addr| {
+                        local_addr.is_ipv6() != next_bind_addr.is_ipv6()
+                    })
+                });
+            if rebind {
+                let _ = self.rebind(next_server.as_deref());
             };
 
-            self.connect();
+            self.connect(next_server.as_deref());
         }
 
         if check_timeout(last_echo, &keepalive_interval) {
@@ -348,9 +365,10 @@ impl poll::Reactor for Client {
             let resp = if let Ok(s) = std::str::from_utf8(&buf[..n]) {
                 if s.trim() == "change-server" {
                     info!("Received change-server command, switching to next server");
-                    match self.rebind() {
+                    let next_server = self.get_next_server_addr();
+                    match self.rebind(next_server.as_deref()) {
                         Ok(_) => {
-                            self.connect();
+                            self.connect(next_server.as_deref());
                             "Changed server\n".to_string()
                         }
                         Err(e) => format!("Failed to change server: {:?}\n", e),

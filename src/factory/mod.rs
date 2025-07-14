@@ -21,7 +21,7 @@ pub trait SocketConfigure {
 }
 
 pub trait SocketFactory {
-    fn create_socket(&self) -> Result<Box<Socket>, Error>;
+    fn create_socket(&self, server_addr: Option<&str>) -> Result<Box<Socket>, Error>;
 }
 
 struct DefualtSocketFactory {
@@ -33,12 +33,12 @@ struct DefualtSocketFactory {
     rndz: rndz::RndzSocketFacoty,
 }
 impl SocketFactory for DefualtSocketFactory {
-    fn create_socket(&self) -> Result<Box<Socket>, Error> {
+    fn create_socket(&self, server_addr: Option<&str>) -> Result<Box<Socket>, Error> {
         #[cfg(feature = "holepunch")]
         let socket = if self.config.rndz.is_some() {
-            self.rndz.create_socket()?
+            self.rndz.create_socket(None)?
         } else {
-            self.native.create_socket()?
+            self.native.create_socket(server_addr)?
         };
         #[cfg(not(feature = "holepunch"))]
         let socket = self.native.create_socket()?;

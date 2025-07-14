@@ -1,5 +1,6 @@
 use crate::error::{Error, Result};
 use rand::Rng;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::{convert::TryInto, net::IpAddr, time::Duration};
 
 /// Converts a byte slice to an IPv4 address
@@ -68,4 +69,25 @@ pub fn build_server_addr(addr: &str) -> String {
 }
 pub(crate) fn pretty_duration(duration: &Duration) -> String {
     pretty_duration::pretty_duration(&Duration::from_secs(duration.as_secs()), None)
+}
+pub fn choose_bind_addr(server_addr: Option<&str>) -> Result<SocketAddr> {
+    let server_addr: Option<SocketAddr> = match server_addr {
+        Some(ref server_addr) => {
+            let mut addrs = server_addr.to_socket_addrs().map_err(|e| {
+                log::error!("Failed to resolve address {}, {}", server_addr, e);
+                Error::InvalidArg(format!("invalid remote addr or dns fail {:?}", server_addr))
+            })?;
+
+            addrs.next()
+        }
+        None => None,
+    };
+
+    let default_listen_addr = match server_addr {
+        Some(SocketAddr::V4(_)) => "0.0.0.0:0",
+        Some(SocketAddr::V6(_)) => "[::]:0",
+        None => "0.0.0.0:0",
+    };
+
+    Ok(default_listen_addr.parse().unwrap())
 }

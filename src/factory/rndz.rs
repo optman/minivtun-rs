@@ -18,7 +18,7 @@ pub(crate) struct RndzSocketFacoty {
 }
 
 impl SocketFactory for RndzSocketFacoty {
-    fn create_socket(&self) -> Result<Box<Socket>, Error> {
+    fn create_socket(&self, _server_addr: Option<&str>) -> Result<Box<Socket>, Error> {
         let config = &self.config;
         let rndz = config.rndz.as_ref().expect("rndz config not set");
         let builder = || -> Result<RndzSocket, Error> {
