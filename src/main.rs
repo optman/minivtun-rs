@@ -79,6 +79,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         do_daemonize(&config);
         Client::new(config, rt)?.run()
     } else {
+        #[cfg(feature = "holepunch")]
+        if config.daemonize && config.rndz().is_some() {
+            //NOTE:
+            // Daemonization is not supported in listen mode with holepunc .
+            // The server builder spawns threads before the `fork()` call for daemonization.
+            // These threads would be lost in the child process, as `fork()` only preserves
+            // the calling thread, rendering the server non-functional.
+            //
+            // To support this, server creation would need to happen *after* daemonizing.
+            // However, this would prevent reporting startup errors (e.g., socket bind
+            // failure) to the user, as the process would already be detached from the terminal.
+
+            return Err("Daemonizing with holepunch enabled is not supported.".into());
+        }
+
         info!(
             "Mini virtual tunneling server on {:}, interface: {:}.",
             rt.socket()
