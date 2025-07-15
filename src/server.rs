@@ -312,7 +312,7 @@ impl poll::Reactor for Server {
         Ok(())
     }
 
-    fn handle_control_connection(&mut self, fd: RawFd) {
+    fn handle_control_connection(&mut self, fd: RawFd) -> Result<()> {
         let mut us = unsafe { UnixStream::from_raw_fd(fd) };
         let mut buf = [0u8; 64];
 
@@ -330,5 +330,7 @@ impl poll::Reactor for Server {
 
             let _ = us.write(resp.as_bytes());
         }
+
+        Ok(())
     }
 }

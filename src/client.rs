@@ -176,6 +176,14 @@ impl Client {
 
         Ok(builder)
     }
+
+    fn is_rebind_required(&mut self, next_bind_addr: std::net::SocketAddr) -> bool {
+        self.socket().map_or(true, |s| {
+            s.local_addr().map_or(true, |local_addr| {
+                local_addr.is_ipv6() != next_bind_addr.is_ipv6()
+            })
+        })
+    }
 }
 
 impl std::fmt::Display for Client {
@@ -332,16 +340,10 @@ impl poll::Reactor for Client {
             //3. connect to the next server
 
             let next_server = self.get_next_server_addr();
-            let next_bind_addr = choose_bind_addr(next_server.as_deref())?;
 
-            let rebind = rebind && check_timeout(last_rebind, &rebind_timeout);
-            let rebind = rebind
-                | self.socket().map_or(true, |s| {
-                    s.local_addr().map_or(true, |local_addr| {
-                        local_addr.is_ipv6() != next_bind_addr.is_ipv6()
-                    })
-                });
-            if rebind {
+            if rebind && check_timeout(last_rebind, &rebind_timeout)
+                || self.is_rebind_required(choose_bind_addr(next_server.as_deref())?)
+            {
                 let _ = self.rebind(next_server.as_deref());
             };
 
@@ -356,7 +358,7 @@ impl poll::Reactor for Client {
         Ok(())
     }
 
-    fn handle_control_connection(&mut self, fd: RawFd) {
+    fn handle_control_connection(&mut self, fd: RawFd) -> Result<()> {
         let mut us = unsafe { UnixStream::from_raw_fd(fd) };
         let mut buf = [0u8; 64];
 
@@ -366,13 +368,17 @@ impl poll::Reactor for Client {
                 if s.trim() == "change-server" {
                     info!("Received change-server command, switching to next server");
                     let next_server = self.get_next_server_addr();
-                    match self.rebind(next_server.as_deref()) {
-                        Ok(_) => {
-                            self.connect(next_server.as_deref());
-                            "Changed server\n".to_string()
-                        }
-                        Err(e) => format!("Failed to change server: {:?}\n", e),
+                    if next_server.is_none() {
+                        info!("No next server address available");
+                        return Ok(());
                     }
+                    if self.config.rebind
+                        || self.is_rebind_required(choose_bind_addr(next_server.as_deref())?)
+                    {
+                        self.rebind(next_server.as_deref())?;
+                    }
+                    self.connect(next_server.as_deref());
+                    format!("Changed server to {}\n", next_server.unwrap())
                 } else if s.trim() == "show-info" {
                     self.to_string()
                 } else {
@@ -384,5 +390,7 @@ impl poll::Reactor for Client {
 
             let _ = us.write(resp.as_bytes());
         }
+
+        Ok(())
     }
 }

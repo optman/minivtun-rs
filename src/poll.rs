@@ -13,7 +13,7 @@ pub trait Reactor {
     fn keepalive(&mut self) -> Result;
     fn tunnel_recv(&self) -> Result;
     fn network_recv(&self) -> Result;
-    fn handle_control_connection(&mut self, fd: RawFd);
+    fn handle_control_connection(&mut self, fd: RawFd) -> Result;
 }
 
 pub fn poll<T: Reactor>(
@@ -82,7 +82,7 @@ pub fn poll<T: Reactor>(
             let fd =
                 unsafe { libc::accept(control_fd, &mut storage as *mut _ as *mut _, &mut len) };
             if fd > 0 {
-                reactor.handle_control_connection(fd);
+                let _ = reactor.handle_control_connection(fd);
             }
         }
     }
