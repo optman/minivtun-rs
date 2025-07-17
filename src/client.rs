@@ -218,7 +218,7 @@ impl std::fmt::Display for Client {
 
         #[cfg(feature = "holepunch")]
         if let Some(ref rndz) = self.config.rndz {
-            writeln!(f, "{:<15} {}", "rndz_server:", rndz.server)?;
+            writeln!(f, "{:<15} {}", "rndz_server:", rndz.servers.join(", "))?;
             writeln!(f, "{:<15} {}", "rndz_local:", rndz.local_id)?;
             writeln!(
                 f,

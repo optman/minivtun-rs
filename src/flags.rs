@@ -48,7 +48,7 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
     #[cfg(feature = "holepunch")]
     let app = {
         app.arg(Arg::from_usage(
-            "--rndz-server [rndz_server]         'rndz server address'",
+            "--rndz-server... [rndz_server]         'rndz server addresses'",
         ))
         .arg(Arg::from_usage(
             "--rndz-local-id [rndz_local_id]     'rndz local id'",
@@ -75,10 +75,11 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
     #[cfg(feature = "holepunch")]
     if matches.is_present("rndz-server") {
         config.rndz = Some(rndz::Config {
-            server: matches
-                .value_of("rndz-server")
-                .expect("rndz server must be present")
-                .to_owned(),
+            servers: matches
+                .values_of("rndz-server")
+                .expect("rndz servers must be present")
+                .map(String::from)
+                .collect(),
             local_id: matches
                 .value_of("rndz-local-id")
                 .expect("rndz-local-id must be present")
@@ -192,7 +193,9 @@ pub(crate) fn parse(config: &mut Config) -> Result<(), Error> {
 
         #[cfg(feature = "holepunch")]
         if let Some(ref mut rndz) = config.rndz {
-            rndz.server = resolve_dns(&rndz.server)?;
+            for server in rndz.servers.iter_mut() {
+                *server = resolve_dns(server)?;
+            }
         }
     }
 

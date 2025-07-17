@@ -13,16 +13,16 @@ pub struct RndzSocket {
 }
 
 pub struct RndzSocketBuilder {
-    server: String,
+    servers: Vec<String>,
     id: String,
     local_addr: Option<SocketAddr>,
     sk_cfg: Option<Box<dyn SocketConfigure>>,
 }
 
 impl RndzSocketBuilder {
-    pub fn new(server: String, id: String) -> Self {
+    pub fn new(servers: Vec<String>, id: String) -> Self {
         Self {
-            server,
+            servers,
             id,
             local_addr: None,
             sk_cfg: None,
@@ -39,7 +39,12 @@ impl RndzSocketBuilder {
     }
 
     fn into_rndz(self) -> Result<rndz::Client> {
-        rndz::Client::new(&self.server, &self.id, self.local_addr, self.sk_cfg)
+        rndz::Client::new(
+            &self.servers.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            &self.id,
+            self.local_addr,
+            self.sk_cfg,
+        )
     }
 
     pub fn connect(self, target_id: &str) -> Result<RndzSocket> {
@@ -74,13 +79,27 @@ impl XSocket for RndzSocket {
     fn is_stale(&self) -> bool {
         self.rndz
             .as_ref()
-            .and_then(|r| r.last_pong())
-            .map(|v| v.elapsed() > Duration::from_secs(60))
+            .map(|r| {
+                let pongs = r.last_pong();
+                if pongs.is_empty() {
+                    return true;
+                }
+                // Check if all pongs are timed out
+                pongs.iter().all(|p| {
+                    p.map(|v| v.elapsed() > Duration::from_secs(60))
+                        .unwrap_or(true)
+                })
+            })
             .unwrap_or(false)
     }
 
     fn last_health(&self) -> Option<Instant> {
-        self.rndz.as_ref().and_then(|r| r.last_pong())
+        self.rndz.as_ref().and_then(|r| {
+            r.last_pong()
+                .iter()
+                .filter_map(|p| *p)
+                .max_by(|a, b| a.cmp(b))
+        })
     }
 
     fn connect(&self, _: &str) -> std::io::Result<()> {

@@ -27,7 +27,7 @@ impl SocketFactory for RndzSocketFacoty {
                 Box::new(sk_cfg) as Box<dyn SocketConfigure>
             });
 
-            let builder = RndzSocketBuilder::new(rndz.server.clone(), rndz.local_id.clone())
+            let builder = RndzSocketBuilder::new(rndz.servers.clone(), rndz.local_id.clone())
                 .with_socket_configure(sk_cfg)
                 .with_local_address(config.listen_addr);
 

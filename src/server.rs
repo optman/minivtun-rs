@@ -174,7 +174,7 @@ impl Display for Server {
 
         #[cfg(feature = "holepunch")]
         if let Some(ref rndz) = self.config.rndz {
-            writeln!(f, "{:<15} {:}", "rndz_server:", rndz.server)?;
+            writeln!(f, "{:<15} {:}", "rndz_server:", rndz.servers.join(", "))?;
             writeln!(f, "{:<15} {:}", "rndz_id:", rndz.local_id)?;
             writeln!(
                 f,
