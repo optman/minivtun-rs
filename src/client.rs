@@ -22,8 +22,6 @@ use std::os::unix::net::UnixStream;
 use std::rc::Rc;
 use std::time::Instant;
 
-extern crate libc;
-
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub struct Client {
@@ -45,7 +43,7 @@ impl Client {
 
     pub fn run(self) -> Result<()> {
         let current_server = self.get_current_server_addr();
-        self.connect(current_server.as_deref());
+        self.connect(current_server.as_str());
         poll::poll(
             self.tun().as_raw_fd(),
             self.rt.control_fd.as_ref().map(|v| v.as_raw_fd()),
@@ -62,26 +60,25 @@ impl Client {
         &self.rt.tun_fd
     }
 
-    fn get_current_server_addr(&self) -> Option<String> {
+    fn get_current_server_addr(&self) -> String {
         let idx = *self.server_index.borrow();
-        self.config.get_server_addr(idx)
+        let server_addrs = self.config.get_server_addrs().unwrap();
+        server_addrs[idx].clone()
     }
 
-    fn get_next_server_addr(&self) -> Option<String> {
-        let server_addrs_len = match self.config.server_addrs.as_ref() {
-            Some(addrs) => addrs.len(),
-            None => return None,
-        };
+    fn get_next_server_addr(&self) -> String {
+        let server_addrs = self.config.get_server_addrs().unwrap();
+        let server_addrs_len = server_addrs.len();
 
         let idx = (*self.server_index.borrow() + 1) % server_addrs_len;
         *self.server_index.borrow_mut() = idx;
-        self.config.get_server_addr(idx)
+        server_addrs[idx].clone()
     }
 
-    fn rebind(&mut self, server_addr: Option<&str>) -> Result<()> {
+    fn rebind(&mut self, server_addrs: Vec<String>) -> Result<()> {
         self.state.borrow_mut().last_rebind = Some(Instant::now());
         if let Some(ref factory) = self.rt.socket_factory {
-            match factory.create_socket(server_addr) {
+            match factory.create_socket(Some(server_addrs)) {
                 Ok(socket) => {
                     info!("rebind to {:}", socket.local_addr().unwrap());
                     self.rt.with_socket(socket);
@@ -98,16 +95,14 @@ impl Client {
         }
     }
 
-    fn connect(&self, server_addr: Option<&str>) {
+    fn connect(&self, server_addr: &str) {
         let s = match self.socket() {
             Some(s) => s,
             None => return,
         };
 
-        if let Some(addr) = server_addr {
-            //ignore failure
-            let _ = s.connect(addr).inspect_err(|e| warn!("{:?}", e));
-        }
+        //ignore failure
+        let _ = s.connect(server_addr).inspect_err(|e| warn!("{:?}", e));
 
         if let Ok(peer_addr) = s.peer_addr() {
             info!("connected to {:}", peer_addr);
@@ -178,6 +173,11 @@ impl Client {
     }
 
     fn is_rebind_required(&mut self, next_bind_addr: std::net::SocketAddr) -> bool {
+        #[cfg(feature = "holepunch")]
+        if self.config.rndz.is_some() {
+            return true;
+        }
+
         self.socket().map_or(true, |s| {
             s.local_addr().map_or(true, |local_addr| {
                 local_addr.is_ipv6() != next_bind_addr.is_ipv6()
@@ -340,14 +340,15 @@ impl poll::Reactor for Client {
             //3. connect to the next server
 
             let next_server = self.get_next_server_addr();
+            let next_servers = vec![next_server.clone()];
 
             if rebind && check_timeout(last_rebind, &rebind_timeout)
-                || self.is_rebind_required(choose_bind_addr(next_server.as_deref())?)
+                || self.is_rebind_required(choose_bind_addr(Some(next_servers.clone()))?)
             {
-                let _ = self.rebind(next_server.as_deref());
+                let _ = self.rebind(next_servers);
             };
 
-            self.connect(next_server.as_deref());
+            self.connect(next_server.as_str());
         }
 
         if check_timeout(last_echo, &keepalive_interval) {
@@ -368,17 +369,14 @@ impl poll::Reactor for Client {
                 if s.trim() == "change-server" {
                     info!("Received change-server command, switching to next server");
                     let next_server = self.get_next_server_addr();
-                    if next_server.is_none() {
-                        info!("No next server address available");
-                        return Ok(());
-                    }
+                    let next_servers = vec![next_server.clone()];
                     if self.config.rebind
-                        || self.is_rebind_required(choose_bind_addr(next_server.as_deref())?)
+                        || self.is_rebind_required(choose_bind_addr(Some(next_servers.clone()))?)
                     {
-                        self.rebind(next_server.as_deref())?;
+                        self.rebind(next_servers)?;
                     }
-                    self.connect(next_server.as_deref());
-                    format!("Changed server to {}\n", next_server.unwrap())
+                    self.connect(next_server.as_str());
+                    format!("Changed server to {}\n", next_server)
                 } else if s.trim() == "show-info" {
                     self.to_string()
                 } else {

@@ -7,11 +7,11 @@ pub(crate) struct NativeSocketFactory {
 }
 
 impl SocketFactory for NativeSocketFactory {
-    fn create_socket(&self, server_addr: Option<&str>) -> Result<Box<Socket>, Error> {
+    fn create_socket(&self, server_addrs: Option<Vec<String>>) -> Result<Box<Socket>, Error> {
         let config = &self.config;
         let bind_addr = match config.listen_addr {
             Some(addr) => addr,
-            None => choose_bind_addr(server_addr)?,
+            None => choose_bind_addr(server_addrs)?,
         };
         let socket = UdpSocket::bind(bind_addr).expect("listen address bind fail.");
 

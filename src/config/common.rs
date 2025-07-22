@@ -80,11 +80,39 @@ impl Config {
         self.cryptor.as_deref()
     }
 
-    pub fn get_server_addr(&self, i: usize) -> Option<String> {
-        self.server_addrs
-            .as_ref()
-            .and_then(|addrs| addrs.get(i))
-            .map(|s| build_server_addr(s))
+    //    pub fn get_server_addr(&self, i: usize) -> Option<String> {
+    //        self.server_addrs
+    //            .as_ref()
+    //            .and_then(|addrs| addrs.get(i))
+    //            .map(|s| build_server_addr(s))
+    //    }
+    //
+    pub fn is_client(&self) -> bool {
+        #[cfg(not(feature = "holepunch"))]
+        {
+            self.server_addrs.is_some()
+        }
+
+        #[cfg(feature = "holepunch")]
+        {
+            self.server_addrs.is_some()
+                || self.rndz.as_ref().map_or(false, |c| c.remote_id.is_some())
+        }
+    }
+
+    pub fn get_server_addrs(&self) -> Option<Vec<String>> {
+        #[cfg(not(feature = "holepunch"))]
+        {
+            self.server_addrs.clone()
+        }
+
+        #[cfg(feature = "holepunch")]
+        {
+            self.server_addrs
+                .clone()
+                .or_else(|| self.rndz.as_ref().map(|rndz| rndz.servers.clone()))
+                .map(|mut addrs| addrs.iter_mut().map(|s| build_server_addr(s)).collect())
+        }
     }
 }
 

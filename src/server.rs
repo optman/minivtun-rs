@@ -289,7 +289,7 @@ impl poll::Reactor for Server {
 
             self.last_rebind = Some(Instant::now());
             if let Some(ref factory) = self.rt.socket_factory {
-                match factory.create_socket(None) {
+                match factory.create_socket(self.config.get_server_addrs()) {
                     Ok(socket) => {
                         debug!("rebind to {:}", socket.local_addr().unwrap());
                         self.rt.with_socket(socket);

@@ -18,16 +18,17 @@ pub(crate) struct RndzSocketFacoty {
 }
 
 impl SocketFactory for RndzSocketFacoty {
-    fn create_socket(&self, _server_addr: Option<&str>) -> Result<Box<Socket>, Error> {
+    fn create_socket(&self, server_addrs: Option<Vec<String>>) -> Result<Box<Socket>, Error> {
         let config = &self.config;
         let rndz = config.rndz.as_ref().expect("rndz config not set");
+        let server_addrs = server_addrs.expect("server addrs can't be empty");
         let builder = || -> Result<RndzSocket, Error> {
             let sk_cfg = self.sk_cfg.clone().map(|sk_cfg| {
                 let sk_cfg = SharedSocketConfigure { sk_cfg };
                 Box::new(sk_cfg) as Box<dyn SocketConfigure>
             });
 
-            let builder = RndzSocketBuilder::new(rndz.servers.clone(), rndz.local_id.clone())
+            let builder = RndzSocketBuilder::new(server_addrs, rndz.local_id.clone())
                 .with_socket_configure(sk_cfg)
                 .with_local_address(config.listen_addr);
 

@@ -62,7 +62,15 @@ impl RuntimeBuilder {
             .socket
             .take()
             .map_or_else(
-                || socket_factory.create_socket(self.config.get_server_addr(0).as_deref()),
+                || {
+                    let server_addrs = self.config.get_server_addrs();
+                    socket_factory.create_socket(if self.config.is_client() {
+                        //rndz client use only one server each time
+                        server_addrs.map(|addrs| addrs[0..1].to_vec())
+                    } else {
+                        server_addrs
+                    })
+                },
                 Ok,
             )
             .map(Some)

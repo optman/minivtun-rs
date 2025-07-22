@@ -70,18 +70,19 @@ pub fn build_server_addr(addr: &str) -> String {
 pub(crate) fn pretty_duration(duration: &Duration) -> String {
     pretty_duration::pretty_duration(&Duration::from_secs(duration.as_secs()), None)
 }
-pub fn choose_bind_addr(server_addr: Option<&str>) -> Result<SocketAddr> {
-    let server_addr: Option<SocketAddr> = match server_addr {
-        Some(ref server_addr) => {
-            let mut addrs = server_addr.to_socket_addrs().map_err(|e| {
-                log::error!("Failed to resolve address {}, {}", server_addr, e);
-                Error::InvalidArg(format!("invalid remote addr or dns fail {:?}", server_addr))
-            })?;
+pub fn choose_bind_addr(server_addrs: Option<Vec<String>>) -> Result<SocketAddr> {
+    let server_addr: Option<SocketAddr> =
+        match server_addrs.as_ref().and_then(|addrs| addrs.first()) {
+            Some(ref server_addr) => {
+                let mut addrs = server_addr.to_socket_addrs().map_err(|e| {
+                    log::error!("Failed to resolve address {}, {}", server_addr, e);
+                    Error::InvalidArg(format!("invalid remote addr or dns fail {:?}", server_addr))
+                })?;
 
-            addrs.next()
-        }
-        None => None,
-    };
+                addrs.next()
+            }
+            None => None,
+        };
 
     let default_listen_addr = match server_addr {
         Some(SocketAddr::V4(_)) => "0.0.0.0:0",
