@@ -38,6 +38,7 @@ pub struct Server {
     rt: Runtime,
     stats: RefCell<HashMap<IpAddr, Stat>>,
     route: RefCell<RouteTable>,
+    last_bind_try: Option<Instant>,
     last_rebind: Option<Instant>,
     last_health: Option<Instant>,
 }
@@ -49,7 +50,8 @@ impl Server {
             rt,
             stats: Default::default(),
             route: Default::default(),
-            last_rebind: Some(Instant::now()),
+            last_bind_try: Some(Instant::now()), // Initialize to now to avoid immediate rebind
+            last_rebind: None,
             last_health: None,
         })
     }
@@ -271,6 +273,7 @@ impl poll::Reactor for Server {
         let Config {
             mut rebind,
             rebind_timeout,
+            reconnect_timeout,
             ..
         } = *self.config;
 
@@ -289,14 +292,20 @@ impl poll::Reactor for Server {
                 .last_rebind
                 .map(|l| l.elapsed() > rebind_timeout)
                 .unwrap_or(true)
+            && self
+                .last_bind_try
+                .map(|l| l.elapsed() > reconnect_timeout)
+                .unwrap_or(true)
         {
             info!("Rebind...");
 
-            self.last_rebind = Some(Instant::now());
+            self.last_bind_try = Some(Instant::now());
+
             if let Some(ref factory) = self.rt.socket_factory {
                 match factory.create_socket(self.config.get_server_addrs()) {
                     Ok(socket) => {
                         debug!("rebind to {:}", socket.local_addr().unwrap());
+                        self.last_rebind = Some(Instant::now());
                         self.rt.with_socket(socket);
                     }
                     Err(e) => {

@@ -23,6 +23,14 @@ impl DerefMut for NativeSocket {
 }
 
 impl XSocket for NativeSocket {
+    fn is_stale(&self) -> bool {
+        false
+    }
+
+    fn last_health(&self) -> Option<std::time::Instant> {
+        Some(std::time::Instant::now())
+    }
+
     fn connect(&self, dst: &str) -> std::io::Result<()> {
         self.0.connect(dst)
     }

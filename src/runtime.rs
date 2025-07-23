@@ -1,6 +1,8 @@
 use crate::default_socket_configure;
 use crate::SocketConfigure;
 
+#[cfg(feature = "holepunch")]
+use crate::socket::DummySocket;
 use crate::Error;
 use crate::{default_socket_factory, Config, Socket, SocketFactory};
 use std::os::fd::OwnedFd;
@@ -77,6 +79,22 @@ impl RuntimeBuilder {
             .or_else(|e| {
                 if self.config.wait_dns {
                     log::warn!("waiting network ready...");
+                    #[cfg(feature = "holepunch")]
+                    if self.config.is_holepunch() && !self.config.is_client() {
+                        //for holepunch server, we create a dummy socket
+                        use std::net::UdpSocket;
+                        let bind_addr = if let Some(addr) = self.config.listen_addr {
+                            addr
+                        } else {
+                            "0.0.0.0:0".parse().unwrap()
+                        };
+
+                        let socket = UdpSocket::bind(bind_addr)
+                            .map_err(|e| Error::Other(format!("bind fail: {}", e)))?;
+                        socket.set_nonblocking(true).unwrap();
+                        let dummy_socket = Box::new(DummySocket::new(socket));
+                        return Ok(Some(dummy_socket));
+                    }
                     Ok(None)
                 } else {
                     Err(e)

@@ -2,6 +2,11 @@ mod native;
 pub use native::NativeSocket;
 
 #[cfg(feature = "holepunch")]
+mod dummy;
+#[cfg(feature = "holepunch")]
+pub use self::dummy::DummySocket;
+
+#[cfg(feature = "holepunch")]
 mod rndz;
 #[cfg(feature = "holepunch")]
 pub use self::rndz::RndzSocket;
