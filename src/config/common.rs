@@ -80,13 +80,11 @@ impl Config {
         self.cryptor.as_deref()
     }
 
-    //    pub fn get_server_addr(&self, i: usize) -> Option<String> {
-    //        self.server_addrs
-    //            .as_ref()
-    //            .and_then(|addrs| addrs.get(i))
-    //            .map(|s| build_server_addr(s))
-    //    }
-    //
+    #[cfg(feature = "holepunch")]
+    pub fn is_holepunch(&self) -> bool {
+        self.rndz.is_some()
+    }
+
     pub fn is_client(&self) -> bool {
         #[cfg(not(feature = "holepunch"))]
         {

@@ -174,7 +174,7 @@ impl Client {
 
     fn is_rebind_required(&mut self, next_bind_addr: std::net::SocketAddr) -> bool {
         #[cfg(feature = "holepunch")]
-        if self.config.rndz.is_some() {
+        if self.config.is_holepunch() {
             return true;
         }
 
@@ -183,6 +183,18 @@ impl Client {
                 local_addr.is_ipv6() != next_bind_addr.is_ipv6()
             })
         })
+    }
+
+    fn change_server(&mut self, next_server: String) -> Result<()> {
+        let next_servers = vec![next_server.clone()];
+        if self.config.rebind
+            || self.is_rebind_required(choose_bind_addr(Some(next_servers.clone()))?)
+        {
+            self.rebind(next_servers)?;
+        }
+        self.connect(next_server.as_str());
+
+        Ok(())
     }
 }
 
@@ -367,16 +379,20 @@ impl poll::Reactor for Client {
         if let Ok(n) = us.read(&mut buf) {
             let resp = if let Ok(s) = std::str::from_utf8(&buf[..n]) {
                 if s.trim() == "change-server" {
-                    info!("Received change-server command, switching to next server");
                     let next_server = self.get_next_server_addr();
-                    let next_servers = vec![next_server.clone()];
-                    if self.config.rebind
-                        || self.is_rebind_required(choose_bind_addr(Some(next_servers.clone()))?)
-                    {
-                        self.rebind(next_servers)?;
+                    info!(
+                        "Received change-server command, switching to {}",
+                        next_server
+                    );
+                    match self.change_server(next_server.clone()) {
+                        Ok(()) => {
+                            format!("Changed server to {}\n", next_server)
+                        }
+                        Err(e) => {
+                            warn!("Failed to change server: {}", e);
+                            format!("Failed to change server: {}\n", e)
+                        }
                     }
-                    self.connect(next_server.as_str());
-                    format!("Changed server to {}\n", next_server)
                 } else if s.trim() == "show-info" {
                     self.to_string()
                 } else {

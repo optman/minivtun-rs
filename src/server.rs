@@ -269,10 +269,15 @@ impl poll::Reactor for Server {
 
     fn keepalive(&mut self) -> Result<()> {
         let Config {
-            rebind,
+            mut rebind,
             rebind_timeout,
             ..
         } = *self.config;
+
+        #[cfg(feature = "holepunch")]
+        if self.config.is_holepunch() {
+            rebind = true;
+        }
 
         if rebind
             && (self.socket().is_stale()

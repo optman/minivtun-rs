@@ -84,8 +84,8 @@ impl XSocket for RndzSocket {
                 if pongs.is_empty() {
                     return true;
                 }
-                // Check if all pongs are timed out
-                pongs.iter().all(|p| {
+                //check if any pong is older than 60 seconds
+                pongs.iter().any(|p| {
                     p.map(|v| v.elapsed() > Duration::from_secs(60))
                         .unwrap_or(true)
                 })
