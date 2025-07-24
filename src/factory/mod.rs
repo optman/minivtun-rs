@@ -13,7 +13,7 @@ use std::rc::Rc;
 use std::os::fd::RawFd;
 
 #[cfg(feature = "holepunch")]
-pub use ::rndz::udp::SocketConfigure;
+pub use ::rndz::udp::client::SocketConfigure;
 
 #[cfg(not(feature = "holepunch"))]
 pub trait SocketConfigure {

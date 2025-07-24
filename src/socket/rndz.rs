@@ -1,14 +1,14 @@
 use crate::socket::XSocket;
-use rndz::udp as rndz;
+use rndz::udp::client::{Connector, Listener};
 use std::io::Result;
 use std::net::{SocketAddr, UdpSocket};
 use std::ops::{Deref, DerefMut};
 use std::time::{Duration, Instant};
 
-pub use rndz::SocketConfigure;
+pub use rndz::udp::client::SocketConfigure;
 
 pub struct RndzSocket {
-    rndz: Option<rndz::Client>,
+    listener: Option<Listener>,
     socket: UdpSocket,
 }
 
@@ -38,8 +38,17 @@ impl RndzSocketBuilder {
         self
     }
 
-    fn into_rndz(self) -> Result<rndz::Client> {
-        rndz::Client::new(
+    fn into_rndz_listener(self) -> Result<Listener> {
+        Listener::new(
+            &self.servers.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            &self.id,
+            self.local_addr,
+            self.sk_cfg,
+        )
+    }
+
+    fn into_rndz_connector(self) -> Result<Connector> {
+        Connector::new(
             &self.servers.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
             &self.id,
             self.local_addr,
@@ -48,15 +57,18 @@ impl RndzSocketBuilder {
     }
 
     pub fn connect(self, target_id: &str) -> Result<RndzSocket> {
-        let socket = self.into_rndz()?.connect(target_id)?;
-        Ok(RndzSocket { rndz: None, socket })
+        let socket = self.into_rndz_connector()?.connect(target_id)?;
+        Ok(RndzSocket {
+            listener: None,
+            socket,
+        })
     }
 
     pub fn listen(self) -> Result<RndzSocket> {
-        let mut rndz = self.into_rndz()?;
-        let socket = rndz.listen()?;
+        let mut listener = self.into_rndz_listener()?;
+        let socket = listener.listen()?;
         Ok(RndzSocket {
-            rndz: Some(rndz),
+            listener: Some(listener),
             socket,
         })
     }
@@ -77,7 +89,7 @@ impl DerefMut for RndzSocket {
 
 impl XSocket for RndzSocket {
     fn is_stale(&self) -> bool {
-        self.rndz
+        self.listener
             .as_ref()
             .map(|r| {
                 let pongs = r.last_pong();
@@ -94,7 +106,7 @@ impl XSocket for RndzSocket {
     }
 
     fn last_health(&self) -> Option<Instant> {
-        self.rndz.as_ref().and_then(|r| {
+        self.listener.as_ref().and_then(|r| {
             r.last_pong()
                 .iter()
                 .filter_map(|p| *p)
