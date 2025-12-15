@@ -354,8 +354,8 @@ impl poll::Reactor for Client {
             let next_server = self.get_next_server_addr();
             let next_servers = vec![next_server.clone()];
 
-            if rebind && check_timeout(last_rebind, &rebind_timeout)
-                || self.is_rebind_required(choose_bind_addr(Some(next_servers.clone()))?)
+            if (rebind || self.is_rebind_required(choose_bind_addr(Some(next_servers.clone()))?))
+                && check_timeout(last_rebind, &rebind_timeout)
             {
                 let _ = self.rebind(next_servers);
             };
