@@ -9,7 +9,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
 const DEFAULT_MTU: u16 = 1300;
-const DEFAULT_RECONNECT_TIMEOUT: Duration = Duration::from_secs(47);
+const DEFAULT_RECONNECT_TIMEOUT: Duration = Duration::from_secs(60 * 10);
 const DEFAULT_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(7);
 const DEFAULT_CLIENT_TIMEOUT: Duration = Duration::from_secs(120);
 const DEFAULT_REBIND_TIMEOUT: Duration = Duration::from_secs(60 * 30);

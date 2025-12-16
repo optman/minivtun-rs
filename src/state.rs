@@ -10,6 +10,7 @@ pub struct State {
     pub xmit_seq: Wrapping<u16>,
     pub rx_bytes: u64,
     pub tx_bytes: u64,
+    pub connect_attempts: u32,
 }
 
 impl Default for State {
@@ -23,6 +24,7 @@ impl Default for State {
             xmit_seq: Wrapping(thread_rng().next_u32() as u16),
             rx_bytes: 0,
             tx_bytes: 0,
+            connect_attempts: 0,
         }
     }
 }

@@ -20,7 +20,7 @@ use std::os::unix::io::FromRawFd;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::rc::Rc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -96,6 +96,7 @@ impl Client {
     }
 
     fn connect(&self, server_addr: &str) {
+        self.state.borrow_mut().last_connect = Some(Instant::now());
         let s = match self.socket() {
             Some(s) => s,
             None => return,
@@ -107,8 +108,6 @@ impl Client {
         if let Ok(peer_addr) = s.peer_addr() {
             info!("connected to {:}", peer_addr);
         };
-
-        self.state.borrow_mut().last_connect = Some(Instant::now());
     }
 
     fn forward_remote(&self, kind: IpDataKind, pkt: &[u8]) -> Result<()> {
@@ -294,21 +293,26 @@ impl poll::Reactor for Client {
             Ok((size, src)) => {
                 trace!("receive from  {:}, size {:}", src, size);
                 match MsgPacket::<&[u8]>::with_cryptor(&mut buf[..size], self.config.cryptor()) {
-                    Ok(msg) => match msg.op() {
-                        Ok(Op::EchoAck) => {
-                            debug!("received echo ack");
-                            self.state.borrow_mut().last_ack = Some(Instant::now());
-                        }
-                        Ok(Op::IpData) => {
-                            self.state.borrow_mut().last_rx = Some(Instant::now());
-                            self.forward_local(IpDataPacket::new(msg.payload()?)?.payload()?)?;
-                        }
-                        Ok(Op::EchoReq) => {
-                            debug!("received echo req(from old version server?)");
-                            self.state.borrow_mut().last_ack = Some(Instant::now());
-                        }
-                        _ => debug!("unexpected msg {:?}", msg.op()),
-                    },
+                    Ok(msg) => {
+                        match msg.op() {
+                            Ok(Op::EchoAck) => {
+                                debug!("received echo ack");
+                                self.state.borrow_mut().last_ack = Some(Instant::now());
+                            }
+                            Ok(Op::IpData) => {
+                                self.state.borrow_mut().last_rx = Some(Instant::now());
+                                self.forward_local(IpDataPacket::new(msg.payload()?)?.payload()?)?;
+                            }
+                            Ok(Op::EchoReq) => {
+                                debug!("received echo req(from old version server?)");
+                                self.state.borrow_mut().last_ack = Some(Instant::now());
+                            }
+                            _ => debug!("unexpected msg {:?}", msg.op()),
+                        };
+
+                        // Reset connection attempts on successful connection
+                        self.state.borrow_mut().connect_attempts = 0;
+                    }
                     _ => trace!("invalid packet"),
                 }
             }
@@ -340,13 +344,25 @@ impl poll::Reactor for Client {
             last_ack,
             last_rx,
             last_echo,
+            connect_attempts,
             ..
         } = *self.state.borrow();
 
-        if check_timeout(last_ack, &reconnect_timeout)
+        // Calculate backoff timeout
+        // Start with 60 seconds, exponential backoff up to reconnect_timeout or rebind_timeout
+        let (reconnect_timeout, rebind_timeout) = {
+            let backoff_secs = 60 * (2_u64.pow(connect_attempts.min(6))); // Cap at 2^6 = 64x multiplier (64 minutes)
+            (
+                Duration::from_secs(backoff_secs.min(reconnect_timeout.as_secs())),
+                Duration::from_secs(backoff_secs.min(rebind_timeout.as_secs())),
+            )
+        };
+
+        let should_reconnect = check_timeout(last_ack, &reconnect_timeout)
             && check_timeout(last_rx, &reconnect_timeout)
-            && check_timeout(last_connect, &reconnect_timeout)
-        {
+            && check_timeout(last_connect, &reconnect_timeout);
+
+        if should_reconnect {
             //1. get next server address
             //2. rebind if needed. The current socket family may not match the next server address. If that is the case, we need to rebind.
             //3. connect to the next server
@@ -359,6 +375,9 @@ impl poll::Reactor for Client {
             {
                 let _ = self.rebind(next_servers);
             };
+
+            // Update connection attempt tracking
+            self.state.borrow_mut().connect_attempts += 1;
 
             self.connect(next_server.as_str());
         }
