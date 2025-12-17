@@ -163,7 +163,7 @@ impl Client {
         Ok(())
     }
 
-    fn new_msg(&self) -> Result<MsgBuilder> {
+    fn new_msg(&self) -> Result<MsgBuilder<'_>> {
         let builder = MsgBuilder::default()
             .with_cryptor(self.config.cryptor())?
             .seq(self.state.borrow_mut().next_seq())?;
@@ -177,7 +177,7 @@ impl Client {
             return true;
         }
 
-        self.socket().map_or(true, |s| {
+        self.socket().is_none_or(|s| {
             s.local_addr().map_or(true, |local_addr| {
                 local_addr.is_ipv6() != next_bind_addr.is_ipv6()
             })
@@ -325,7 +325,7 @@ impl poll::Reactor for Client {
 
     fn keepalive(&mut self) -> Result<()> {
         let check_timeout = |last_event: Option<Instant>, timeout: &std::time::Duration| -> bool {
-            last_event.map_or(true, |event| {
+            last_event.is_none_or(|event| {
                 Instant::now().duration_since(event) > *timeout
             })
         };

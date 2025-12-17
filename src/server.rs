@@ -149,7 +149,7 @@ impl Server {
         Ok(())
     }
 
-    fn new_msg(&self, ra: &RefRA) -> Result<MsgBuilder> {
+    fn new_msg(&self, ra: &RefRA) -> Result<MsgBuilder<'_>> {
         let builder = MsgBuilder::default()
             .with_cryptor(self.config.cryptor())?
             .seq(ra.next_seq())?;

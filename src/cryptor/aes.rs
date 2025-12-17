@@ -32,7 +32,7 @@ impl Padding for ZeroPadding {
     }
 
     fn pad(buf: &mut [u8], pos: usize, block_size: usize) -> Result<&mut [u8], PadError> {
-        if pos % block_size == 0 {
+        if pos.is_multiple_of(block_size) {
             Ok(&mut buf[..pos])
         } else {
             let bs = block_size * (pos / block_size);
@@ -131,13 +131,12 @@ where
 mod tests {
     use self::super::*;
     use std::convert::TryInto;
-    use std::iter::repeat;
-
+    
     #[test]
     fn tests() {
-        let key: Vec<u8> = repeat(1).take(16).collect();
+        let key: Vec<u8> = std::iter::repeat_n(1, 16).collect();
         let key: [u8; 16] = key.try_into().unwrap();
-        let data: Vec<u8> = repeat(2).take(64).collect();
+        let data: Vec<u8> = std::iter::repeat_n(2, 64).collect();
 
         let c = Aes128Cryptor::new(&key);
 

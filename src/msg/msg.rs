@@ -161,12 +161,11 @@ mod tests {
     use self::super::*;
     use crate::cryptor::Aes128Cryptor;
     use crate::msg::{echo, ipdata};
-    use core::iter::repeat;
-    use std::convert::TryInto;
+        use std::convert::TryInto;
 
     #[test]
     fn test() {
-        let key: Vec<u8> = repeat(1).take(16).collect();
+        let key: Vec<u8> = core::iter::repeat_n(1, 16).collect();
         let key: [u8; 16] = key.try_into().unwrap();
         let cryptor = Aes128Cryptor::new(&key);
 

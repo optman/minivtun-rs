@@ -163,7 +163,7 @@ fn add_addr(addr: IpNet, dev: &str) -> Result<(), Error> {
         .arg("dev")
         .arg(dev)
         .status()
-        .map_or(false, |c| c.success())
+        .is_ok_and(|c| c.success())
     {
         return Ok(());
     }
@@ -198,7 +198,7 @@ fn add_route(
         c.arg(metric);
     }
 
-    if c.status().map_or(false, |c| c.success()) {
+    if c.status().is_ok_and(|c| c.success()) {
         return Ok(());
     }
 

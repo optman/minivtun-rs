@@ -94,7 +94,7 @@ impl Config {
         #[cfg(feature = "holepunch")]
         {
             self.server_addrs.is_some()
-                || self.rndz.as_ref().map_or(false, |c| c.remote_id.is_some())
+                || self.rndz.as_ref().is_some_and(|c| c.remote_id.is_some())
         }
     }
 
