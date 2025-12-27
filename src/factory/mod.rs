@@ -103,12 +103,8 @@ mod linux {
         fn config_socket(&self, sk: std::os::unix::prelude::RawFd) -> std::io::Result<()> {
             if let Some(fwmark) = self.config.fwmark {
                 log::debug!("set fwmark {}", fwmark);
-                setsockopt(
-                    unsafe { &BorrowedFd::borrow_raw(sk) },
-                    sockopt::Mark,
-                    &fwmark,
-                )
-                .map_err(std::io::Error::other)?;
+                let fd = unsafe { &BorrowedFd::borrow_raw(sk) };
+                setsockopt(&fd, sockopt::Mark, &fwmark).map_err(std::io::Error::other)?;
             }
 
             Ok(())
