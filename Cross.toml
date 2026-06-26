@@ -1,0 +1,8 @@
+[target.mipsel-unknown-linux-musl]
+build-std = true
+
+[build.env]
+passthrough = ["PROTOC"]
+# Tells the internal Cargo exactly WHICH components to build from source
+# This bypasses the need for a separate `.cargo/config.toml` file entirely!
+CARGO_UNSTABLE_BUILD_STD = "std,core,alloc,proc_macro,panic_abort"

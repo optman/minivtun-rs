@@ -1,3 +1,5 @@
+cargo-features = ["panic-immediate-abort"]
+
 [package]
 name = "minivtun-rs"
 version = "0.1.9"
@@ -39,3 +41,10 @@ name = "minivtun"
 [[bin]]
 name = "minivtun-rs"
 required-features = ["build-binary"]
+
+[profile.release]
+strip = true          # Removes all symbols and debug info
+opt-level = "z"       # Optimizes for binary size instead of speed
+lto = true            # Enables Link-Time Optimization to reduce dead code
+codegen-units = 1     # Maximizes LTO optimization depth (increases compile time)
+panic = "immediate-abort" # Removes panic unwinding code (saves massive space)
